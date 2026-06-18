@@ -8,6 +8,7 @@ import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StripeProvider, useStripe } from '@stripe/stripe-react-native';
 import { GLM_COLORS, API_BASE } from '../constants';
+import { Asset } from 'expo-asset';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import CheckoutScreen from './CheckoutScreen';
@@ -20,6 +21,13 @@ const INJECT_JS = `
   // Guard — only run once per page load, prevent double-injection issues
   if (window.__glmInjected) return;
   window.__glmInjected = true;
+
+  // ── Load stamps from API ─────────────────────────────────────────────────────
+  try {
+    if (typeof window.__loadStampsFromAPI === 'function') {
+      window.__loadStampsFromAPI('${API_BASE}');
+    }
+  } catch(e) {}
 
   // ── 1. Hide site chrome + designer color-check lightbox ────────────────────
   var _hideCSS = document.createElement('style');
@@ -605,8 +613,14 @@ function DesignerInner({ route }) {
   const [pendingDesignData, setPendingDesignData] = useState(null);
   const [designPrice, setDesignPrice] = useState('115');
 
-  const designerUrl = `${API_BASE}/designer-dashboard/`;
-  const startUrl    = route?.params?.url || designerUrl;
+  const [startUrl, setStartUrl] = React.useState(null);
+  const designerUrl = startUrl;
+
+  React.useEffect(() => {
+    Asset.loadAsync(require('../../assets/designer/index.html')).then(([asset]) => {
+      setStartUrl(asset.localUri);
+    });
+  }, []);
 
   function handleNavChange(state) {
     // We don't block any navigation — the designer handles its own flow.
@@ -774,20 +788,29 @@ function DesignerInner({ route }) {
         <WebView
           key={webViewKey}
           ref={webRef}
-          source={{ uri: startUrl }}
+          source={startUrl ? { uri: startUrl } : undefined}
           style={[S.webview, (loading || hasError) && { opacity: 0, height: 0 }]}
           injectedJavaScriptBeforeContentLoaded={`window.__glmIsApp=true;window.__glmInjected=false;true;`}
           onLoadEnd={() => {
             setLoading(false);
             setHasError(false);
-            // Wait for the page JS (designer.js) to fully initialize before injecting
-            // 800ms gives Fabric.js + GLM_CONFIG time to load
-            setTimeout(() => {
-              webRef.current?.injectJavaScript(`window.__glmInjected = false; true;`);
+            // Local HTML — Fabric.js loads from CDN, wait for it
+            // then inject our intercept code
+            const tryInject = (attempts) => {
+              webRef.current?.injectJavaScript(`
+                if (typeof fabric !== 'undefined' && typeof canvas !== 'undefined') {
+                  window.__glmInjected = false;
+                  true;
+                } else {
+                  window.__glmFabricReady = false;
+                  true;
+                }
+              `);
               setTimeout(() => {
                 webRef.current?.injectJavaScript(INJECT_JS);
-              }, 100);
-            }, 800);
+              }, 200);
+            };
+            setTimeout(() => tryInject(0), 1500);
           }}
           onLoadStart={() => { setLoading(true); setHasError(false); }}
           onError={() => { setLoading(false); setHasError(true); }}
