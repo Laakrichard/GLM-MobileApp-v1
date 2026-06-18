@@ -35,18 +35,18 @@ export const FINISHES = [
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 export const PRICING = {
-  stampSmall:    2,
-  stampMedium:   5,
-  stampLarge:    10,
-  textPerLetter: 1,
-  shapeEach:     1,
+  stampSmall:    3,
+  stampMedium:   7,
+  stampLarge:    15,
+  textPerLetter: 3,
+  shapeEach:     3,
 };
 
 // ── Stamp Sizes ───────────────────────────────────────────────────────────────
 export const STAMP_SIZES = {
-  small:  { px: 45,  price: 2  },
-  medium: { px: 72,  price: 5  },
-  large:  { px: 100, price: 10 },
+  small:  { px: 45,  price: 3  },
+  medium: { px: 72,  price: 7  },
+  large:  { px: 100, price: 15 },
 };
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
