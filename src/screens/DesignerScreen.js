@@ -8,7 +8,6 @@ import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StripeProvider, useStripe } from '@stripe/stripe-react-native';
 import { GLM_COLORS, API_BASE } from '../constants';
-import { Asset } from 'expo-asset';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import CheckoutScreen from './CheckoutScreen';
@@ -613,14 +612,9 @@ function DesignerInner({ route }) {
   const [pendingDesignData, setPendingDesignData] = useState(null);
   const [designPrice, setDesignPrice] = useState('115');
 
-  const [startUrl, setStartUrl] = React.useState(null);
-  const designerUrl = startUrl;
-
-  React.useEffect(() => {
-    Asset.loadAsync(require('../../assets/designer/index.html')).then(([asset]) => {
-      setStartUrl(asset.localUri);
-    });
-  }, []);
+  // Load designer from bundled local HTML — no network needed
+  const designerUrl = null; // unused
+  const startUrl = null;    // unused — WebView uses require() directly
 
   function handleNavChange(state) {
     // We don't block any navigation — the designer handles its own flow.
@@ -788,7 +782,7 @@ function DesignerInner({ route }) {
         <WebView
           key={webViewKey}
           ref={webRef}
-          source={startUrl ? { uri: startUrl } : undefined}
+          source={require('../../assets/designer/index.html')}
           style={[S.webview, (loading || hasError) && { opacity: 0, height: 0 }]}
           injectedJavaScriptBeforeContentLoaded={`window.__glmIsApp=true;window.__glmInjected=false;true;`}
           onLoadEnd={() => {

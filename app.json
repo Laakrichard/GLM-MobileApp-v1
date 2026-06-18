@@ -32,6 +32,9 @@
           "color": "#B87333"
         }
       ]
+    ],
+    "assetBundlePatterns": [
+      "assets/**/*"
     ]
   }
 }
