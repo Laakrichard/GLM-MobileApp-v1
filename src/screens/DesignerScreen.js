@@ -141,16 +141,16 @@ const INJECT_JS = `
             var stampCost = 0;
             objs.forEach(function(o){
               if(o._stamp){
-                if(o._stampSize==='small')  stampCost += (window._drlaak_stampSmall||1);
-                if(o._stampSize==='medium') stampCost += (window._drlaak_stampMedium||2);
-                if(o._stampSize==='large')  stampCost += (window._drlaak_stampLarge||3);
+                if(o._stampSize==='small')  stampCost += (window._drlaak_stampSmall||3);
+                if(o._stampSize==='medium') stampCost += (window._drlaak_stampMedium||7);
+                if(o._stampSize==='large')  stampCost += (window._drlaak_stampLarge||15);
               }
             });
             var letters = 0;
             objs.forEach(function(o){ if(o._isText||o.type==='i-text') letters+=(o.text||'').replace(/\s/g,'').length; });
             var shapes = 0;
             objs.forEach(function(o){ if(o._shape) shapes++; });
-            var elementCost = stampCost + letters*(window._drlaak_textLetter||1) + shapes*(window._drlaak_shapeEach||1);
+            var elementCost = stampCost + letters*(window._drlaak_textLetter||3) + shapes*(window._drlaak_shapeEach||3);
             price = basePrice + elementCost;
           } catch(ce) { price = basePrice; }
         }
@@ -678,7 +678,8 @@ function DesignerInner({ route }) {
     setShowColorModal(false);
     setHasError(false);
     setScreen('designer');
-    // Increment key — forces WebView to fully remount with fresh INJECT_JS
+    // Increment key — fully remounts WebView with fresh page load
+    // onLoadEnd will reset guard and re-inject INJECT_JS
     setWebViewKey(k => k + 1);
   }
 
@@ -780,7 +781,11 @@ function DesignerInner({ route }) {
           onLoadEnd={() => {
             setLoading(false);
             setHasError(false);
-            webRef.current?.injectJavaScript(INJECT_JS);
+            // Reset guard so INJECT_JS always runs clean on each load
+            webRef.current?.injectJavaScript(`window.__glmInjected = false; true;`);
+            setTimeout(() => {
+              webRef.current?.injectJavaScript(INJECT_JS);
+            }, 100);
           }}
           onLoadStart={() => { setLoading(true); setHasError(false); }}
           onError={() => { setLoading(false); setHasError(true); }}
