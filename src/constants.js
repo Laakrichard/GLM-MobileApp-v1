@@ -1,19 +1,62 @@
+// ── API ───────────────────────────────────────────────────────────────────────
+export const GLM_STAGING    = 'https://aidemo.glmgolf.com';
+export const GLM_BASE_URL   = 'https://glmgolf.com';
+export const API_BASE       = GLM_STAGING; // Switch to GLM_BASE_URL before release
+
+// ── Stripe ────────────────────────────────────────────────────────────────────
+export const STRIPE_PK = 'YOUR_STRIPE_PUBLISHABLE_KEY';
+
+// ── Colors ────────────────────────────────────────────────────────────────────
 export const GLM_COLORS = {
-  copper:  '#B87333',
-  dark:    '#1A3326',
-  cream:   '#F5F0EA',
-  black:   '#111111',
-  white:   '#FFFFFF',
-  grey:    '#888888',
-  darkGrey:'#2a2a2a',
+  bg:          '#0D0D0D',
+  card:        '#161616',
+  cardBorder:  '#2A2A2A',
+  copper:      '#B87333',
+  copperLight: '#D4956A',
+  green:       '#1A3326',
+  greenLight:  '#2A4A36',
+  text:        '#F0EDE8',
+  textMuted:   '#888888',
+  textFaint:   '#555555',
+  success:     '#4CAF72',
+  error:       '#E05252',
+  white:       '#FFFFFF',
+  black:       '#000000',
 };
 
-export const GLM_BASE_URL = 'https://glmgolf.com';
-export const GLM_STAGING  = 'https://aidemo.glmgolf.com';
+// Alias
+export const COLORS = GLM_COLORS;
 
-// Use staging during development, switch to GLM_BASE_URL for production
-export const API_BASE = GLM_STAGING;
+// ── Finishes ──────────────────────────────────────────────────────────────────
+export const FINISHES = [
+  { id: 'torched', label: 'Torched Copper', basePrice: 115, color: '#B87333' },
+  { id: 'plain',   label: 'Plain Copper',   basePrice: 105, color: '#C49A6C' },
+];
 
+// ── Pricing ───────────────────────────────────────────────────────────────────
+export const PRICING = {
+  stampSmall:    2,
+  stampMedium:   5,
+  stampLarge:    10,
+  textPerLetter: 1,
+  shapeEach:     1,
+};
+
+// ── Stamp Sizes ───────────────────────────────────────────────────────────────
+export const STAMP_SIZES = {
+  small:  { px: 45,  price: 2  },
+  medium: { px: 72,  price: 5  },
+  large:  { px: 100, price: 10 },
+};
+
+// ── Canvas ────────────────────────────────────────────────────────────────────
+export const CANVAS_SIZE   = 300;
+export const MARKER_RADIUS = 130;
+
+// ── Admin roles ───────────────────────────────────────────────────────────────
+export const ADMIN_ROLES = ['administrator', 'editor', 'shop_manager'];
+
+// ── YouTube Videos ────────────────────────────────────────────────────────────
 export const YOUTUBE_VIDEOS = [
   { id: 'a65uLGwwoHg', title: 'GLM Marker Process — Studio Session' },
   { id: 'PQ9AhFG6n3o', title: 'Custom Copper Markers — Behind the Scenes' },
@@ -22,5 +65,24 @@ export const YOUTUBE_VIDEOS = [
   { id: 'inn9aRYvlzI', title: 'GLM — From Design to Finished Marker' },
 ];
 
-// Alias for new screens
-export const COLORS = GLM_COLORS;
+// ── Price Calculator (mirrors designer.js updPrice logic exactly) ─────────────
+export function calculatePrice({ finish, stampsA, stampsB, lettersA, lettersB, shapesA, shapesB }) {
+  const base = finish === 'plain' ? FINISHES[1].basePrice : FINISHES[0].basePrice;
+
+  function sideCost(stamps, letters, shapes) {
+    const sc = (stamps || []).reduce((acc, s) => {
+      acc[s.size] = (acc[s.size] || 0) + 1;
+      return acc;
+    }, {});
+    const stampCost = (sc.small || 0) * PRICING.stampSmall
+                    + (sc.medium || 0) * PRICING.stampMedium
+                    + (sc.large || 0) * PRICING.stampLarge;
+    const letterCost = (letters || 0) * PRICING.textPerLetter;
+    const shapeCost  = (shapes  || 0) * PRICING.shapeEach;
+    return stampCost + letterCost + shapeCost;
+  }
+
+  const costA = sideCost(stampsA, lettersA, shapesA);
+  const costB = sideCost(stampsB, lettersB, shapesB);
+  return base + costA + costB;
+}
