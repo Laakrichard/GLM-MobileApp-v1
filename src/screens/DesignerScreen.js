@@ -1,682 +1,844 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Alert, Image, FlatList, ActivityIndicator,
-  Dimensions, Modal, PanResponder, Animated,
+  View, StyleSheet, ActivityIndicator, Text, Image,
+  TouchableOpacity, ScrollView, TextInput, Alert,
+  KeyboardAvoidingView, Platform, Modal
 } from 'react-native';
-import { Canvas, Circle, Group, Text as SkiaText, Skia, Path as SkiaPath, useFont } from '@shopify/react-native-skia';
+import { WebView } from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { StripeProvider, useStripe } from '@stripe/stripe-react-native';
+import { GLM_COLORS, API_BASE } from '../constants';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
-import { GLM_COLORS, API_BASE, FINISHES, PRICING, STAMP_SIZES, calculatePrice } from '../constants';
+import CheckoutScreen from './CheckoutScreen';
 
-const { width: SW } = Dimensions.get('window');
-const CANVAS_SIZE = SW - 32;
-const MARKER_R    = CANVAS_SIZE * 0.42;
-const CENTER      = CANVAS_SIZE / 2;
+const STRIPE_PK = 'pk_live_51ThI2EDmp9jxNV8P5yi3fZEtDrKnTG7q1p8sdgR3s0ZLdk2wStUlxWeBF1FwRV3Swssxk4BtSn9xCrNyxHEPsHOi00YMzeXYd7';
 
-const INK_COLORS = [
-  '#000000','#FFFFFF','#DC143C','#FF6347','#FF8C00','#FFD700',
-  '#4CAF50','#FF69B4','#800080','#8B4513','#87CEEB','#84cc16',
-  '#9f1239','#1e40af','#065f46','#7c3aed','#f59e0b','#334155',
-];
+// Inject JS to capture design image and send to app when cart is triggered
+const INJECT_JS = `
+(function() {
+  // Guard — only run once per page load, prevent double-injection issues
+  if (window.__glmInjected) return;
+  window.__glmInjected = true;
 
-const SHAPES = [
-  { id: 'circle',   icon: '⬤', label: 'Circle'   },
-  { id: 'rect',     icon: '▬', label: 'Rect'     },
-  { id: 'triangle', icon: '▲', label: 'Triangle' },
-  { id: 'star',     icon: '★', label: 'Star'     },
-  { id: 'heart',    icon: '♥', label: 'Heart'    },
-  { id: 'diamond',  icon: '◆', label: 'Diamond'  },
-  { id: 'line',     icon: '—', label: 'Line'     },
-  { id: 'ring',     icon: '○', label: 'Ring'     },
-];
+  // ── 1. Hide site chrome + designer color-check lightbox ────────────────────
+  var _hideCSS = document.createElement('style');
+  _hideCSS.innerHTML = 'header,footer,nav,aside,.site-header,#site-header,#masthead,.site-footer,#colophon,.main-navigation,.elementor-location-header,.elementor-location-footer,[data-elementor-type="header"],[data-elementor-type="footer"],#wpadminbar,.menu-toggle,.hamburger,.site-branding,.woocommerce-breadcrumb,#secondary,.widget-area{display:none!important;height:0!important;overflow:hidden!important;padding:0!important;margin:0!important;}body,html{padding:0!important;margin:0!important;}';
+  document.head.appendChild(_hideCSS);
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function dotsAroundRing(count, radius, cx, cy, dotR = 5) {
-  const dots = [];
-  for (let i = 0; i < count; i++) {
-    const angle = (2 * Math.PI * i) / count - Math.PI / 2;
-    dots.push({ x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle), r: dotR });
-  }
-  return dots;
-}
-
-function makeShapePath(type, cx, cy, size = 18) {
-  const s = size;
-  const h = s / 2;
-  switch (type) {
-    case 'circle':   return `M ${cx} ${cy - h} A ${h} ${h} 0 1 1 ${cx - 0.01} ${cy - h} Z`;
-    case 'rect':     return `M ${cx - h} ${cy - h} L ${cx + h} ${cy - h} L ${cx + h} ${cy + h} L ${cx - h} ${cy + h} Z`;
-    case 'triangle': return `M ${cx} ${cy - h} L ${cx + h} ${cy + h} L ${cx - h} ${cy + h} Z`;
-    case 'diamond':  return `M ${cx} ${cy - h} L ${cx + h} ${cy} L ${cx} ${cy + h} L ${cx - h} ${cy} Z`;
-    case 'ring':     return `M ${cx} ${cy - h} A ${h} ${h} 0 1 1 ${cx - 0.01} ${cy - h} Z M ${cx} ${cy - h + 4} A ${h - 4} ${h - 4} 0 1 0 ${cx - 0.01} ${cy - h + 4} Z`;
-    case 'line':     return `M ${cx - h} ${cy} L ${cx + h} ${cy}`;
-    case 'star': {
-      const outer = h, inner = h * 0.45;
-      let d = '';
-      for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? outer : inner;
-        const a = (i * Math.PI) / 5 - Math.PI / 2;
-        d += `${i === 0 ? 'M' : 'L'} ${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)} `;
+  // Kill the designer's own color-check lightbox the moment it appears in the DOM.
+  // We identify it by its button text ("Yes, my colors are set", "Let Jon pick", etc.)
+  // and by common overlay/modal class patterns the designer uses.
+  function _killColorModal() {
+    // Find any modal/overlay that contains the color check text
+    document.querySelectorAll('div,section,aside').forEach(function(el) {
+      var txt = el.innerText || '';
+      if (
+        txt.includes('DID YOU SELECT') ||
+        txt.includes('colors are set') ||
+        txt.includes('Let Jon pick the colors') ||
+        txt.includes('let me add colors')
+      ) {
+        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;';
       }
-      return d + 'Z';
-    }
-    case 'heart':
-      return `M ${cx} ${cy + h * 0.3} C ${cx - h * 1.4} ${cy - h * 0.3} ${cx - h * 1.4} ${cy - h} ${cx} ${cy - h * 0.5} C ${cx + h * 1.4} ${cy - h} ${cx + h * 1.4} ${cy - h * 0.3} ${cx} ${cy + h * 0.3} Z`;
-    default: return '';
-  }
-}
-
-// ── Main Component ────────────────────────────────────────────────────────────
-export default function DesignerScreen({ navigation }) {
-  const [finish,       setFinish]       = useState('torched');
-  const [sides,        setSides]        = useState('1');
-  const [activeSide,   setActiveSide]   = useState('A');
-  const [elementsA,    setElementsA]    = useState([]);
-  const [elementsB,    setElementsB]    = useState([]);
-  const [selected,     setSelected]     = useState(null);
-  const [stampSize,    setStampSize]    = useState('small');
-  const [inkColor,     setInkColor]     = useState('#000000');
-  const [stamps,       setStamps]       = useState([]);
-  const [stampsLoaded, setStampsLoaded] = useState(false);
-  const [showStamps,   setShowStamps]   = useState(false);
-  const [showText,     setShowText]     = useState(false);
-  const [textVal,      setTextVal]      = useState('');
-  const [screen,       setScreen]       = useState('designer');
-  const [saving,       setSaving]       = useState(false);
-  const [dragging,     setDragging]     = useState(null);
-  const canvasRef = useRef(null);
-
-  const elements    = activeSide === 'A' ? elementsA : elementsB;
-  const setElements = activeSide === 'A' ? setElementsA : setElementsB;
-  const finishData  = FINISHES.find(f => f.id === finish) || FINISHES[0];
-
-  const price = calculatePrice({
-    finish,
-    stampsA:  elementsA.filter(e => e.type === 'stamp'),
-    stampsB:  elementsB.filter(e => e.type === 'stamp'),
-    lettersA: elementsA.filter(e => e.type === 'text').reduce((a, e) => a + (e.label||'').replace(/\s/g,'').length, 0),
-    lettersB: elementsB.filter(e => e.type === 'text').reduce((a, e) => a + (e.label||'').replace(/\s/g,'').length, 0),
-    shapesA:  elementsA.filter(e => e.type === 'shape').length,
-    shapesB:  elementsB.filter(e => e.type === 'shape').length,
-  });
-
-  // ── Load stamps ─────────────────────────────────────────────────────────────
-  const loadStamps = useCallback(async () => {
-    if (stampsLoaded) return;
-    try {
-      const res  = await fetch(`${API_BASE}/wp-json/glm/v1/stamps`);
-      const data = await res.json();
-      setStamps(data.stamps || []);
-    } catch (e) { setStamps([]); }
-    finally { setStampsLoaded(true); }
-  }, [stampsLoaded]);
-
-  // ── Add stamp ────────────────────────────────────────────────────────────────
-  function addStamp(stamp) {
-    const el = {
-      id: Date.now(), type: 'stamp',
-      x: CENTER, y: CENTER,
-      size: stampSize, color: inkColor,
-      uri: stamp.svg_url, label: stamp.name,
-    };
-    setElements(prev => [...prev, el]);
-    setShowStamps(false);
-    setSelected(el.id);
-  }
-
-  // ── Add text ─────────────────────────────────────────────────────────────────
-  function addText() {
-    if (!textVal.trim()) return;
-    const el = {
-      id: Date.now(), type: 'text',
-      x: CENTER, y: CENTER,
-      color: inkColor, label: textVal.trim(), fontSize: 18,
-    };
-    setElements(prev => [...prev, el]);
-    setTextVal(''); setShowText(false); setSelected(el.id);
-  }
-
-  // ── Add shape ────────────────────────────────────────────────────────────────
-  function addShape(type) {
-    const el = {
-      id: Date.now(), type: 'shape',
-      x: CENTER, y: CENTER,
-      shape: type, color: inkColor, size: 22,
-    };
-    setElements(prev => [...prev, el]);
-    setSelected(el.id);
-  }
-
-  // ── Apply 8 dots preset ──────────────────────────────────────────────────────
-  function apply8Dots() {
-    const dotR    = 5;
-    const ringR   = MARKER_R - dotR - 6;
-    const newDots = dotsAroundRing(8, ringR, CENTER, CENTER, dotR).map((d, i) => ({
-      id: Date.now() + i, type: 'shape',
-      x: d.x, y: d.y,
-      shape: 'dot', color: inkColor, size: dotR * 2,
-    }));
-    setElements(prev => [...prev, ...newDots]);
-  }
-
-  // ── Apply curved text preset ─────────────────────────────────────────────────
-  function applyCurvedText() {
-    const top = {
-      id: Date.now(), type: 'text',
-      x: CENTER, y: CENTER - MARKER_R + 30,
-      color: inkColor, label: 'YOUR TEXT', fontSize: 14, arc: 'top',
-    };
-    const bottom = {
-      id: Date.now() + 1, type: 'text',
-      x: CENTER, y: CENTER + MARKER_R - 20,
-      color: inkColor, label: 'YOUR TEXT', fontSize: 14, arc: 'bottom',
-    };
-    setElements(prev => [...prev, top, bottom]);
-  }
-
-  // ── Undo ─────────────────────────────────────────────────────────────────────
-  function undo() { setElements(prev => prev.slice(0, -1)); setSelected(null); }
-
-  function clearSide() {
-    Alert.alert('Clear Side ' + activeSide, 'Remove all elements?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: () => { setElements([]); setSelected(null); } },
-    ]);
-  }
-
-  // ── Save PNG ─────────────────────────────────────────────────────────────────
-  async function savePNG() {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission needed'); return; }
-    setSaving(true);
-    try {
-      Alert.alert('✓ Saved', 'Design saved to camera roll.');
-    } catch (e) { Alert.alert('Error', 'Could not save.'); }
-    finally { setSaving(false); }
-  }
-
-  // ── Canvas touch: select & drag ───────────────────────────────────────────────
-  let dragStart = useRef(null);
-  let dragEl    = useRef(null);
-
-  function onCanvasTouch(e) {
-    const { locationX: x, locationY: y } = e.nativeEvent;
-    const hit = [...elements].reverse().find(el => {
-      const sz = (el.type === 'stamp' ? STAMP_SIZES[el.size]?.px : el.size) || 30;
-      return Math.abs(x - el.x) < sz / 2 + 12 && Math.abs(y - el.y) < sz / 2 + 12;
     });
-    if (hit) {
-      setSelected(hit.id);
-      dragStart.current = { x, y };
-      dragEl.current    = hit.id;
-    } else {
-      setSelected(null);
-      dragStart.current = null;
-      dragEl.current    = null;
-    }
   }
 
-  function onCanvasMove(e) {
-    if (!dragEl.current || !dragStart.current) return;
-    const { locationX: x, locationY: y } = e.nativeEvent;
-    const dx = x - dragStart.current.x;
-    const dy = y - dragStart.current.y;
-    dragStart.current = { x, y };
-    setElements(prev => prev.map(el => {
-      if (el.id !== dragEl.current) return el;
-      const nx = Math.max(CENTER - MARKER_R + 10, Math.min(CENTER + MARKER_R - 10, el.x + dx));
-      const ny = Math.max(CENTER - MARKER_R + 10, Math.min(CENTER + MARKER_R - 10, el.y + dy));
-      return { ...el, x: nx, y: ny };
-    }));
+  function _nuke(){
+    document.querySelectorAll('header,footer,nav,#wpadminbar,.site-header,.site-footer,.main-navigation').forEach(function(el){
+      el.style.cssText='display:none!important;';
+    });
+    if(document.body) document.body.style.paddingTop='0';
+    _killColorModal();
   }
+  _nuke();
+  setInterval(_nuke, 200);
+  new MutationObserver(_nuke).observe(document.documentElement, {childList:true, subtree:true});
+  window.__glmIsApp = true;
 
-  function onCanvasEnd() { dragStart.current = null; dragEl.current = null; }
-
-  // ── Render elements on Skia canvas ───────────────────────────────────────────
-  function renderElements() {
-    return elements.map(el => {
-      const isSel  = el.id === selected;
-      const color  = el.color || '#000000';
-
-      if (el.type === 'text') {
-        return (
-          <Group key={el.id}>
-            {isSel && <Circle cx={el.x} cy={el.y} r={20} color="rgba(184,115,51,0.2)" />}
-            <SkiaText
-              x={el.x - (el.label.length * 5)}
-              y={el.y + 6}
-              text={el.label}
-              color={color}
-              font={null}
-            />
-          </Group>
-        );
+  // Poll price every 500ms — call updPrice() first to ensure DOM is current
+  window.__glmCurrentPrice = 0;
+  setInterval(function() {
+    try {
+      // Force updPrice() to recalculate and write to #price-canvas
+      if (typeof updPrice === 'function') updPrice();
+      // Then read the result
+      var el = document.getElementById('price-canvas');
+      if (el) {
+        var v = parseFloat((el.textContent||'').replace(/[^0-9.]/g,''));
+        if (v > 0) window.__glmCurrentPrice = v;
       }
-
-      if (el.type === 'stamp') {
-        const sz   = STAMP_SIZES[el.size]?.px || 45;
-        const half = sz / 2;
-        return (
-          <Group key={el.id}>
-            <Circle cx={el.x} cy={el.y} r={half}
-              color={isSel ? 'rgba(184,115,51,0.3)' : 'rgba(0,0,0,0.08)'} />
-            <SkiaText x={el.x - 4} y={el.y + 5} text="✦" color={color} font={null} />
-            {isSel && <Circle cx={el.x} cy={el.y} r={half + 2}
-              color={GLM_COLORS.copper} style="stroke" strokeWidth={1.5} />}
-          </Group>
-        );
+      // Fallback: read directly from designer variables
+      if (!window.__glmCurrentPrice && typeof basePrice !== 'undefined') {
+        window.__glmCurrentPrice = basePrice;
       }
+    } catch(e) {}
+  }, 1000);
 
-      if (el.type === 'shape') {
-        if (el.shape === 'dot') {
-          return (
-            <Group key={el.id}>
-              <Circle cx={el.x} cy={el.y} r={el.size / 2} color={color} />
-              {isSel && <Circle cx={el.x} cy={el.y} r={el.size / 2 + 2}
-                color={GLM_COLORS.copper} style="stroke" strokeWidth={1.5} />}
-            </Group>
-          );
+  // ── 2. Save PNG intercept ────────────────────────────────────────────────────
+  var _origCE = document.createElement.bind(document);
+  document.createElement = function(tag) {
+    var el = _origCE(tag);
+    if ((tag||'').toLowerCase() === 'a') {
+      var _oc = el.click.bind(el);
+      el.click = function() {
+        var href = el.href || el.getAttribute('href') || '';
+        if (el.download && href && href.startsWith('data:image')) {
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'save_design_png', imageData: href,
+          }));
+          return;
         }
-        const pathStr = makeShapePath(el.shape, el.x, el.y, el.size || 22);
-        if (!pathStr) return null;
-        const path = Skia.Path.MakeFromSVGString(pathStr);
-        if (!path) return null;
-        return (
-          <Group key={el.id}>
-            <SkiaPath path={path} color={color}
-              style={el.shape === 'ring' || el.shape === 'line' ? 'stroke' : 'fill'}
-              strokeWidth={2} />
-            {isSel && <Circle cx={el.x} cy={el.y} r={(el.size || 22) / 2 + 4}
-              color={GLM_COLORS.copper} style="stroke" strokeWidth={1.5} />}
-          </Group>
-        );
+        _oc();
+      };
+    }
+    return el;
+  };
+
+  // ── 3. Intercept Save PNG + Order This Design ───────────────────────────────
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('button,a,[role="button"]');
+    if (!btn) return;
+    var txt = (btn.textContent || '').trim().toLowerCase();
+
+    // ── Save PNG: call doDownload() directly, skip color check lightbox ──
+    if (txt.includes('save png') || txt.includes('save') && txt.includes('png')) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      try { if (typeof saveSide === 'function') saveSide(); } catch(e1) {}
+      try { if (typeof doDownload === 'function') { doDownload(); return; } } catch(e2) {}
+      return;
+    }
+
+    if (!txt.includes('order')) return;
+
+    // Block the designer's own handler (color check lightbox) from firing
+    e.stopImmediatePropagation();
+    e.preventDefault();
+
+    // Step 1: flush current side to localStorage
+    try { if (typeof saveSide === 'function') saveSide(); } catch(se) {}
+    // Step 2: force price recalculation
+    try { if (typeof updPrice === 'function') updPrice(); } catch(pe) {}
+
+    setTimeout(function() {
+      try {
+        // Call updPrice() to force recalculation, then wait a tick for DOM to update
+        try { if (typeof updPrice === 'function') updPrice(); } catch(e) {}
+        // Small wait for updPrice() to finish writing to DOM
+        var price = 0;
+        // Read after updPrice() has run synchronously
+        var priceEl = document.getElementById('price-canvas');
+        if (priceEl) price = parseFloat((priceEl.textContent||'').replace(/[^0-9.]/g,''))||0;
+        if (!price) {
+          var totalEl = document.getElementById('o-total');
+          if (totalEl) price = parseFloat((totalEl.textContent||'').replace(/[^0-9.]/g,''))||0;
+        }
+        // Build price from scratch using designer variables directly
+        if (!price && typeof basePrice !== 'undefined') {
+          try {
+            var objs = canvas.getObjects().filter(function(o){ return !o._guide && !o._isBg; });
+            var stampCost = 0;
+            objs.forEach(function(o){
+              if(o._stamp){
+                if(o._stampSize==='small')  stampCost += (window._drlaak_stampSmall||1);
+                if(o._stampSize==='medium') stampCost += (window._drlaak_stampMedium||2);
+                if(o._stampSize==='large')  stampCost += (window._drlaak_stampLarge||3);
+              }
+            });
+            var letters = 0;
+            objs.forEach(function(o){ if(o._isText||o.type==='i-text') letters+=(o.text||'').replace(/\s/g,'').length; });
+            var shapes = 0;
+            objs.forEach(function(o){ if(o._shape) shapes++; });
+            var elementCost = stampCost + letters*(window._drlaak_textLetter||1) + shapes*(window._drlaak_shapeEach||1);
+            price = basePrice + elementCost;
+          } catch(ce) { price = basePrice; }
+        }
+        if (!price) price = 115;
+
+        // ── Finish ──
+        var finishEl = document.getElementById('o-finish');
+        var finish = (finishEl ? finishEl.textContent.trim() : '') || 'Torched Copper';
+
+        // ── Sides: ONLY count as double-sided if sB has real user objects ──
+        var sAJson = localStorage.getItem('sA') || 'null';
+        var sBJson = localStorage.getItem('sB') || 'null';
+
+        var sAObjs = [];
+        var sBObjs = [];
+        try {
+          var sAData = JSON.parse(sAJson);
+          sAObjs = (sAData && sAData.objects || []).filter(function(o){ return !o._guide && !o._isBg; });
+        } catch(e) {}
+        try {
+          var sBData = JSON.parse(sBJson);
+          sBObjs = (sBData && sBData.objects || []).filter(function(o){ return !o._guide && !o._isBg; });
+        } catch(e) {}
+
+        var isDoubleSided = sBObjs.length > 0;
+        var sidesLabel = isDoubleSided ? 'Double-Sided (A + B)' : 'Single-Sided (A - Front)';
+
+        // ── Send metadata ──
+        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'design_meta',
+          price: String(price),
+          finish: finish,
+          sides: sidesLabel,
+        }));
+
+        // ── Canvas size from live Fabric canvas ──
+        var sz = 500;
+        try { if (typeof canvas !== 'undefined' && canvas.width > 100) sz = canvas.width; } catch(ce) {}
+
+        // ── Render a side: draw finish bg circle then overlay user objects ──
+        // saveSide() strips the bg, so we must redraw it from the current finish.
+        // We copy the finish background from the LIVE canvas backgroundImage (Side A)
+        // or from the o-finish colour for Side B.
+        function renderSideWithBg(userObjs, bgSrc, cb) {
+          if (!userObjs.length) { cb(null); return; }
+          var el = _origCE('canvas');
+          el.width = sz; el.height = sz;
+          el.style.cssText = 'position:fixed;left:-99999px;top:-99999px;visibility:hidden;';
+          document.body.appendChild(el);
+          var fc = new fabric.StaticCanvas(el, { width: sz, height: sz, enableRetinaScaling: false });
+
+          function addObjects() {
+            fabric.util.enlivenObjects(userObjs, function(objs) {
+              objs.forEach(function(o) { fc.add(o); });
+              fc.renderAll();
+              var img = null;
+              try { img = fc.toDataURL({ format: 'png', quality: 1, multiplier: 1 }); } catch(de) {}
+              fc.dispose();
+              try { document.body.removeChild(el); } catch(re) {}
+              cb(img);
+            });
+          }
+
+          if (bgSrc) {
+            fabric.Image.fromURL(bgSrc, function(img) {
+              img.set({ left: 0, top: 0, selectable: false, evented: false });
+              img.scaleToWidth(sz);
+              img.scaleToHeight(sz);
+              fc.setBackgroundImage(img, function() { addObjects(); });
+            }, { crossOrigin: 'anonymous' });
+          } else {
+            addObjects();
+          }
+        }
+
+        // Get the finish bg image src from the live canvas
+        var bgImgSrc = null;
+        try {
+          var liveBg = (typeof canvas !== 'undefined') ? canvas.backgroundImage : null;
+          if (liveBg && liveBg._element && liveBg._element.src) bgImgSrc = liveBg._element.src;
+        } catch(bge) {}
+
+        // Render Side A
+        if (sAObjs.length > 0) {
+          renderSideWithBg(sAObjs, bgImgSrc, function(imgA) {
+            if (imgA) {
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'design_image_a', imageData: imgA,
+              }));
+            }
+            // Render Side B only if it has objects
+            if (isDoubleSided) {
+              renderSideWithBg(sBObjs, bgImgSrc, function(imgB) {
+                if (imgB) {
+                  window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'design_image_b', imageData: imgB,
+                  }));
+                }
+                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+              });
+            } else {
+              // Single sided — clear any stale Side B image
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'clear_image_b' }));
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+            }
+          });
+        } else {
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+        }
+
+      } catch(err) {
+        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
       }
-      return null;
-    });
-  }
+    }, 200);
 
-  const elemCount = elements.length;
+  }, true);
 
-  // ── Cart ─────────────────────────────────────────────────────────────────────
-  if (screen === 'cart') {
-    const sidesLabel = elementsB.length > 0 ? 'Double-Sided (A + B)' : 'Single-Sided (A)';
-    return (
-      <View style={{ flex: 1, backgroundColor: GLM_COLORS.bg }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 56, backgroundColor: GLM_COLORS.green }}>
-          <View style={{ width: 90 }} />
-          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Your Cart</Text>
-          <TouchableOpacity
-            style={{ backgroundColor: 'rgba(224,82,82,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(224,82,82,0.4)' }}
-            onPress={() => Alert.alert('Cancel Order?', 'Return to designer?', [
-              { text: 'Keep Order', style: 'cancel' },
-              { text: 'Cancel Order', style: 'destructive', onPress: () => setScreen('designer') },
-            ])}
-          ><Text style={{ color: '#E05252', fontSize: 11, fontWeight: '800' }}>✕ Cancel Order</Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView contentContainerStyle={{ padding: 20 }}>
-          <View style={S.cartCard}>
-            <Text style={S.cartSectionLabel}>YOUR DESIGN</Text>
-            {[['Finish', finishData.label, true], ['Sides', sidesLabel, false],
-              ['Side A', elementsA.length + ' elements', false],
-              elementsB.length > 0 && ['Side B', elementsB.length + ' elements', false],
-            ].filter(Boolean).map(([l, v, c]) => (
-              <View key={l} style={S.cartRow}>
-                <Text style={S.cartLabel}>{l}</Text>
-                <Text style={[S.cartValue, c && { color: '#B87333', fontWeight: '700' }]}>{v}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={S.cartCard}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <View style={{ flex: 1 }}><Text style={{ fontWeight: '700', fontSize: 15 }}>Custom Copper Marker — GLM</Text><Text style={{ color: '#888', fontSize: 12 }}>Handcrafted. One of a kind.</Text></View>
-              <Text style={{ color: '#B87333', fontWeight: '800', fontSize: 22 }}>${price}</Text>
-            </View>
-            <View style={{ borderTopWidth: 1, borderTopColor: '#F0F0F0', marginTop: 12, paddingTop: 12 }}>
-              <View style={S.cartRow}><Text style={S.cartLabel}>Shipping</Text><Text style={S.cartValue}>FREE</Text></View>
-              <View style={S.cartRow}><Text style={{ fontWeight: '800', fontSize: 16, color: '#111' }}>Total</Text><Text style={{ color: '#B87333', fontWeight: '800', fontSize: 22 }}>${price}.00 USD</Text></View>
-            </View>
-          </View>
-          <TouchableOpacity style={{ backgroundColor: '#B87333', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }} onPress={() => navigation?.navigate('Main')}>
-            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Proceed to Checkout →</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={{ paddingVertical: 12, alignItems: 'center' }} onPress={() => setScreen('designer')}>
-            <Text style={{ color: '#888', fontSize: 14 }}>← Continue Designing</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
+})();
+true;
+`;
+
+// ── Native Cart ────────────────────────────────────────────────────────────────
+function NativeCart({ onBack, onCheckout, designImage, designImageB, price, finish, sides, colorChoice }) {
+  const [cancelling, setCancelling] = React.useState(false);
+
+  function handleCancel() {
+    Alert.alert(
+      'Cancel Order?',
+      'This will clear your current design and return you to the designer.',
+      [
+        { text: 'Keep Order', style: 'cancel' },
+        { text: 'Cancel Order', style: 'destructive', onPress: () => onBack() },
+      ]
     );
   }
 
-  // ── Designer ─────────────────────────────────────────────────────────────────
   return (
-    <View style={S.root}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
-
-        {/* Canvas area */}
-        <View style={S.canvasArea}>
-          {/* Info bar */}
-          <View style={S.cinfo}>
-            <Text style={S.cinfoText}>1.25" dia · Copper marker</Text>
-            <Text style={S.cinfoSep}> · </Text>
-            <Text style={S.cinfoText}>Designing: <Text style={{ fontWeight: '700', color: '#111' }}>Side {activeSide} — {activeSide === 'A' ? 'Front' : 'Back'}</Text></Text>
-            <Text style={S.cinfoSep}> · </Text>
-            <Text style={S.cinfoText}>{elemCount} element{elemCount !== 1 ? 's' : ''}</Text>
-          </View>
-
-          {/* Side switcher + price */}
-          <View style={S.sideBar}>
-            <View style={S.sideSwitch}>
-              <Text style={S.sideLbl}>Side:</Text>
-              {['A', 'B'].map(s => (
-                <TouchableOpacity key={s} style={[S.sideBtn, activeSide === s && S.sideBtnOn]} onPress={() => setActiveSide(s)}>
-                  <Text style={[S.sideBtnTxt, activeSide === s && S.sideBtnTxtOn]}>{s} — {s === 'A' ? 'Front' : 'Back'}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View>
-              <Text style={S.priceLbl}>Total</Text>
-              <Text style={S.priceBig}>${price}</Text>
-            </View>
-          </View>
-
-          {/* Canvas */}
-          <View style={S.canvasWrap}>
-            <Canvas
-              style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
-              onTouchStart={onCanvasTouch}
-              onTouchMove={onCanvasMove}
-              onTouchEnd={onCanvasEnd}
-            >
-              {/* Background */}
-              <Circle cx={CENTER} cy={CENTER} r={MARKER_R + 20} color="#EBEBEB" />
-              <Circle cx={CENTER} cy={CENTER} r={MARKER_R + 16} color="#DDD" style="stroke" strokeWidth={1} />
-              {/* White inner */}
-              <Circle cx={CENTER} cy={CENTER} r={MARKER_R - 1} color="#FFFFFF" />
-              {/* Copper ring */}
-              <Circle cx={CENTER} cy={CENTER} r={MARKER_R} color={finish === 'plain' ? '#B87333' : '#5C2E0A'} style="stroke" strokeWidth={10} />
-              {/* Elements */}
-              {renderElements()}
-            </Canvas>
-          </View>
-
-          {/* Undo + Clear */}
-          <View style={S.undoRow}>
-            <TouchableOpacity style={S.undoBtn} onPress={undo}><Text style={S.undoBtnText}>↩ Undo</Text></TouchableOpacity>
-            <TouchableOpacity style={S.undoBtn} onPress={clearSide}><Text style={S.undoBtnText}>Clear Side</Text></TouchableOpacity>
-          </View>
-          <Text style={S.sizeNote}>1.25" diameter · Copper marker · Actual proportions</Text>
-        </View>
-
-        {/* ── Section 1: Choose Your Finish ───────────────────────────────── */}
-        <View style={S.section}>
-          <View style={S.secHeader}>
-            <View style={S.secNum}><Text style={S.secNumText}>1</Text></View>
-            <Text style={S.secTitle}>Choose Your Finish</Text>
-          </View>
-          <View style={S.finishGrid}>
-            {FINISHES.map(f => (
-              <TouchableOpacity key={f.id} style={[S.fcard, finish === f.id && S.fcardOn]} onPress={() => setFinish(f.id)}>
-                <View style={[S.fimg, { background: f.id === 'torched' ? '#3D2415' : '#C8922A', backgroundColor: f.id === 'torched' ? '#3D2415' : '#C8922A' }]} />
-                <Text style={S.fname}>{f.id === 'torched' ? '🔥 Torched' : 'Plain'} · ${f.basePrice}</Text>
-                <View style={[S.fradio, finish === f.id && S.fradioOn]} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Section 2: Number of Sides ──────────────────────────────────── */}
-        <View style={S.section}>
-          <View style={S.secHeader}>
-            <View style={S.secNum}><Text style={S.secNumText}>2</Text></View>
-            <Text style={S.secTitle}>Number of Sides</Text>
-          </View>
-          <View style={S.sidesRow}>
-            {[['1','1 Side'],['2','2 Sides']].map(([val, lbl]) => (
-              <TouchableOpacity key={val} style={[S.sideOption, sides === val && S.sideOptionOn]} onPress={() => setSides(val)}>
-                <View style={[S.fradio, sides === val && S.fradioOn]} />
-                <Text style={[S.sideOptionText, sides === val && { color: '#111', fontWeight: '700' }]}>{lbl}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Section 3: Design Side A/B ──────────────────────────────────── */}
-        <View style={S.section}>
-          <View style={S.secHeader}>
-            <View style={S.secNum}><Text style={S.secNumText}>3</Text></View>
-            <Text style={S.secTitle}>Design Side {activeSide}</Text>
-          </View>
-
-          {/* Quick Start Presets */}
-          <Text style={S.subLabel}>QUICK START PRESETS</Text>
-          <View style={S.presetsList}>
-            <TouchableOpacity style={S.presetRow} onPress={applyCurvedText}>
-              <Text style={S.presetIcon}>⌢T⌣</Text>
-              <Text style={S.presetLabel}>Curved Text Top & Bottom</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={S.presetRow} onPress={apply8Dots}>
-              <Text style={S.presetIcon}>⊙</Text>
-              <Text style={S.presetLabel}>8 Dots</Text>
-            </TouchableOpacity>
-            {/* Stamp presets from gallery */}
-            {stamps.slice(0, 5).map(s => (
-              <TouchableOpacity key={s.id} style={S.presetRow} onPress={() => addStamp(s)}>
-                <Image source={{ uri: s.svg_url }} style={{ width: 28, height: 28 }} resizeMode="contain" />
-                <Text style={S.presetLabel}>{s.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Ink Color */}
-          <Text style={S.subLabel}>INK COLOR</Text>
-          <View style={S.inkGrid}>
-            {INK_COLORS.map(c => (
-              <TouchableOpacity
-                key={c}
-                style={[S.inkSwatch, { backgroundColor: c }, inkColor === c && S.inkSwatchOn, c === '#FFFFFF' && { borderWidth: 1, borderColor: '#DDD' }]}
-                onPress={() => setInkColor(c)}
-              />
-            ))}
-          </View>
-
-          {/* Add Text */}
-          <TouchableOpacity style={S.addRow} onPress={() => setShowText(true)}>
-            <Text style={[S.addRowIcon, { fontFamily: 'serif' }]}>T</Text>
-            <Text style={S.addRowText}>Add Text</Text>
-          </TouchableOpacity>
-
-          {/* Add Stamps */}
-          <TouchableOpacity style={S.addRow} onPress={() => { loadStamps(); setShowStamps(true); }}>
-            <Text style={S.addRowIcon}>⊕</Text>
-            <Text style={S.addRowText}>Add Stamps</Text>
-          </TouchableOpacity>
-
-          {/* Add Shapes */}
-          <Text style={[S.subLabel, { marginTop: 12 }]}>ADD SHAPES (+${PRICING.shapeEach} each)</Text>
-          <View style={S.shapesGrid}>
-            {SHAPES.map(sh => (
-              <TouchableOpacity key={sh.id} style={S.shapeBtn} onPress={() => addShape(sh.id)}>
-                <Text style={S.shapeBtnIcon}>{sh.icon}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Selected element actions */}
-          {selected && (
-            <View style={S.selectedActions}>
-              <Text style={S.selectedLabel}>Element selected</Text>
-              <TouchableOpacity style={S.deleteSelectedBtn} onPress={() => { setElements(prev => prev.filter(e => e.id !== selected)); setSelected(null); }}>
-                <Text style={S.deleteSelectedTxt}>✕ Remove Element</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-      </ScrollView>
-
-      {/* Sticky bottom bar */}
-      <View style={S.bottomBar}>
-        <View style={S.priceBlock}>
-          <Text style={S.bottomPriceLabel}>Your Price</Text>
-          <Text style={S.bottomPrice}>${price}</Text>
-          <Text style={S.bottomPriceSub}>{finishData.label} · {sides} Side{sides !== '1' ? 's' : ''}</Text>
-        </View>
-        <View style={S.bottomBtns}>
-          <TouchableOpacity style={S.savePngBtn} onPress={savePNG} disabled={saving}>
-            {saving ? <ActivityIndicator size="small" color="#444" /> : <Text style={S.savePngTxt}>Save PNG</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={S.orderBtn} onPress={() => {
-            if (elementsA.length === 0 && elementsB.length === 0) { Alert.alert('Add a design first'); return; }
-            setScreen('cart');
-          }}>
-            <Text style={S.orderBtnTxt}>Order This Design →</Text>
-          </TouchableOpacity>
-        </View>
+    <View style={S.page}>
+      <View style={S.header}>
+        <View style={{ width: 90 }} />
+        <Text style={S.headerTitle}>Your Cart</Text>
+        <TouchableOpacity
+          style={{ backgroundColor: 'rgba(224,82,82,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(224,82,82,0.4)' }}
+          onPress={handleCancel}
+        >
+          <Text style={{ color: '#E05252', fontSize: 12, fontWeight: '800' }}>✕ Cancel Order</Text>
+        </TouchableOpacity>
       </View>
+      <ScrollView contentContainerStyle={{ padding: 20 }}>
 
-      {/* Stamps Modal */}
-      <Modal visible={showStamps} animationType="slide" onRequestClose={() => setShowStamps(false)}>
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 56, borderBottomWidth: 1, borderBottomColor: '#EEE' }}>
-            <Text style={{ fontWeight: '800', fontSize: 17, color: '#111' }}>Choose a Stamp</Text>
-            <TouchableOpacity onPress={() => setShowStamps(false)}><Text style={{ fontSize: 22, color: '#999' }}>✕</Text></TouchableOpacity>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8, padding: 12 }}>
-            {['small', 'medium', 'large'].map(sz => (
-              <TouchableOpacity key={sz} style={[S.szBtn, stampSize === sz && S.szBtnOn]} onPress={() => setStampSize(sz)}>
-                <Text style={[S.szTxt, stampSize === sz && S.szTxtOn]}>{sz.charAt(0).toUpperCase() + sz.slice(1)} +${PRICING['stamp' + sz.charAt(0).toUpperCase() + sz.slice(1)]}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {!stampsLoaded
-            ? <ActivityIndicator color="#B87333" style={{ marginTop: 40 }} />
-            : stamps.length === 0
-              ? <Text style={{ color: '#999', textAlign: 'center', marginTop: 40, padding: 20 }}>No stamps yet. Add them from the Admin panel → Stamps section.</Text>
-              : (
-                <FlatList
-                  data={stamps}
-                  numColumns={3}
-                  keyExtractor={s => String(s.id)}
-                  contentContainerStyle={{ padding: 10 }}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity style={S.scard} onPress={() => addStamp(item)}>
-                      <Image source={{ uri: item.svg_url }} style={{ width: 52, height: 52 }} resizeMode="contain" />
-                      <Text style={S.sname}>{item.name}</Text>
-                      <Text style={S.sprice}>+${item.price || PRICING.stampSmall}</Text>
-                    </TouchableOpacity>
-                  )}
-                />
-              )
-          }
-        </View>
-      </Modal>
-
-      {/* Text Modal */}
-      <Modal visible={showText} animationType="slide" transparent onRequestClose={() => setShowText(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 }}>
-            <Text style={{ fontWeight: '800', fontSize: 17, color: '#111', marginBottom: 4 }}>Add Text</Text>
-            <Text style={{ color: '#888', fontSize: 12, marginBottom: 14 }}>+${PRICING.textPerLetter} per letter</Text>
-            <TextInput
-              style={{ borderWidth: 1, borderColor: '#DDD', borderRadius: 10, padding: 14, fontSize: 16, color: '#111', marginBottom: 8 }}
-              value={textVal} onChangeText={setTextVal}
-              placeholder="Type your text..." placeholderTextColor="#AAA"
-              autoFocus maxLength={20}
-            />
-            <Text style={{ color: '#888', fontSize: 11, marginBottom: 16 }}>
-              {textVal.replace(/\s/g,'').length} letters = +${textVal.replace(/\s/g,'').length * PRICING.textPerLetter}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity style={{ flex: 1, paddingVertical: 14, borderRadius: 10, borderWidth: 1, borderColor: '#DDD', alignItems: 'center' }} onPress={() => { setShowText(false); setTextVal(''); }}>
-                <Text style={{ color: '#888' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 2, paddingVertical: 14, borderRadius: 10, backgroundColor: '#111', alignItems: 'center' }} onPress={addText}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>＋ Add Text to Marker</Text>
-              </TouchableOpacity>
+        {/* Design preview - both sides */}
+        {(designImage || designImageB) && (
+          <View style={S.card}>
+            <Text style={S.sectionLabel}>Your Design</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              {designImage && (
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ color: '#555', fontSize: 11, marginBottom: 6 }}>SIDE A</Text>
+                  <Image source={{ uri: designImage }} style={{ width: '100%', height: 140, borderRadius: 10 }} resizeMode="contain" />
+                </View>
+              )}
+              {designImageB && (
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ color: '#555', fontSize: 11, marginBottom: 6 }}>SIDE B</Text>
+                  <Image source={{ uri: designImageB }} style={{ width: '100%', height: 140, borderRadius: 10 }} resizeMode="contain" />
+                </View>
+              )}
+            </View>
+            {/* Design details */}
+            <View style={{ marginTop: 14, gap: 6 }}>
+              {finish ? <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: '#555', fontSize: 12 }}>Finish</Text><Text style={{ color: '#B87333', fontSize: 12, fontWeight: '700' }}>{finish}</Text></View> : null}
+              {sides ? <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: '#555', fontSize: 12 }}>Sides</Text><Text style={{ color: '#F0EDE8', fontSize: 12 }}>{sides}</Text></View> : null}
+              {colorChoice ? <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: '#555', fontSize: 12 }}>Colors</Text><Text style={{ color: '#F0EDE8', fontSize: 12 }}>{colorChoice}</Text></View> : null}
             </View>
           </View>
+        )}
+
+        <View style={S.card}>
+          <View style={S.rowBetween}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={S.itemName}>Custom Copper Marker — GLM</Text>
+              <Text style={S.itemSub}>Handcrafted. One of a kind.</Text>
+            </View>
+            <Text style={S.itemPrice}>${price || '115'}</Text>
+          </View>
+          <View style={S.sep} />
+          <View style={S.rowBetween}><Text style={S.labelGrey}>Shipping</Text><Text style={S.valueWhite}>FREE</Text></View>
+          <View style={[S.rowBetween, { marginTop: 8 }]}>
+            <Text style={S.labelTotal}>Total</Text>
+            <Text style={S.valueTotal}>${price || '115'}.00 USD</Text>
+          </View>
         </View>
-      </Modal>
+
+        <TouchableOpacity style={S.primaryBtn} onPress={onCheckout}>
+          <Text style={S.primaryBtnText}>Proceed to Checkout →</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </View>
   );
 }
 
+// ── Native Checkout ────────────────────────────────────────────────────────────
+function NativeCheckout({ onBack, onSuccess, designImage, designImageB, price }) {
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const [email,     setEmail]     = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
+  const [address,   setAddress]   = useState('');
+  const [city,      setCity]      = useState('');
+  const [zip,       setZip]       = useState('');
+  const [country,   setCountry]   = useState('US');
+  const [phone,     setPhone]     = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const totalAmount = parseInt((price || '115').replace(/\D/g, '')) || 115;
+
+  async function handlePay() {
+    if (!email || !firstName || !lastName || !address || !city || !zip) {
+      Alert.alert('Missing info', 'Please fill in all required fields.');
+      return;
+    }
+    setLoading(true);
+    try {
+      // 1. Create Payment Intent
+      const piRes = await fetch(`${API_BASE}/wp-json/glm/v1/create-payment-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: totalAmount * 100, currency: 'usd' }),
+      });
+      const piData = await piRes.json();
+      if (!piData.client_secret) {
+        Alert.alert('Payment Error', piData.message || 'Could not initialize payment.');
+        setLoading(false); return;
+      }
+
+      // 2. Init Stripe Payment Sheet
+      const { error: initError } = await initPaymentSheet({
+        paymentIntentClientSecret: piData.client_secret,
+        merchantDisplayName: 'Golf Life Metals',
+        applePay: { merchantCountryCode: 'US' },
+        googlePay: { merchantCountryCode: 'US', testEnv: false, currencyCode: 'usd' },
+        style: 'alwaysDark',
+        appearance: {
+          colors: {
+            primary: '#B87333',
+            background: '#161616',
+            componentBackground: '#1E1E1E',
+            componentBorder: '#2A2A2A',
+            primaryText: '#F0EDE8',
+            secondaryText: '#888',
+            componentText: '#F0EDE8',
+            placeholderText: '#444',
+            icon: '#B87333',
+          },
+          shapes: { borderRadius: 14, borderWidth: 0.5 },
+        },
+      });
+      if (initError) { Alert.alert('Payment Error', initError.message); setLoading(false); return; }
+
+      // 3. Show Payment Sheet (Apple Pay / Card / Google Pay)
+      const { error: payError } = await presentPaymentSheet();
+      if (payError) {
+        if (payError.code !== 'Canceled') Alert.alert('Payment Failed', payError.message);
+        setLoading(false); return;
+      }
+
+      // 4. Create WooCommerce order + email design
+      const orderRes = await fetch(`${API_BASE}/wp-json/glm/v1/create-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: firstName, last_name: lastName,
+          email, phone, address, city, zip, country,
+          payment_intent_id: piData.payment_intent_id,
+          amount: totalAmount,
+          design_image: designImage || '',
+        }),
+      });
+      const orderData = await orderRes.json();
+      setLoading(false);
+      onSuccess(orderData);
+
+    } catch (e) {
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+      setLoading(false);
+    }
+  }
+
+  const Field = ({ label, value, onChange, keyboard, required, half }) => (
+    <View style={[{ marginBottom: 14 }, half && { flex: 1 }]}>
+      <Text style={S.fieldLabel}>{label}{required ? ' *' : ''}</Text>
+      <TextInput
+        style={S.fieldInput} value={value} onChangeText={onChange}
+        placeholderTextColor="#444" keyboardType={keyboard || 'default'}
+        autoCapitalize={keyboard === 'email-address' ? 'none' : 'words'}
+      />
+    </View>
+  );
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={S.page}>
+        <View style={S.header}>
+          <TouchableOpacity style={S.backBtn} onPress={onBack}>
+            <Text style={S.backText}>← Cart</Text>
+          </TouchableOpacity>
+          <Text style={S.headerTitle}>Checkout</Text>
+          <View style={{ width: 90 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+
+          {/* Design thumbnails - both sides */}
+          {(designImage || designImageB) && (
+            <View style={[S.card, { marginBottom: 16 }]}>
+              <Text style={S.sectionLabel}>Your Design</Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {designImage && (
+                  <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={{ color: '#555', fontSize: 10, marginBottom: 4 }}>SIDE A</Text>
+                    <Image source={{ uri: designImage }} style={{ width: '100%', height: 100, borderRadius: 8 }} resizeMode="contain" />
+                  </View>
+                )}
+                {designImageB && (
+                  <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={{ color: '#555', fontSize: 10, marginBottom: 4 }}>SIDE B</Text>
+                    <Image source={{ uri: designImageB }} style={{ width: '100%', height: 100, borderRadius: 8 }} resizeMode="contain" />
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Order summary */}
+          <View style={S.card}>
+            <Text style={S.sectionLabel}>Order Summary</Text>
+            <View style={S.rowBetween}>
+              <Text style={S.itemName}>Custom Copper Marker</Text>
+              <Text style={S.itemPrice}>${totalAmount}</Text>
+            </View>
+            <View style={S.sep} />
+            <View style={S.rowBetween}><Text style={S.labelGrey}>Shipping</Text><Text style={S.valueWhite}>FREE</Text></View>
+            <View style={[S.rowBetween, { marginTop: 8 }]}>
+              <Text style={S.labelTotal}>Total</Text>
+              <Text style={S.valueTotal}>${totalAmount}.00 USD</Text>
+            </View>
+          </View>
+
+          {/* Contact */}
+          <Text style={S.sectionTitle}>Contact</Text>
+          <View style={S.card}>
+            <Field label="Email" value={email} onChange={setEmail} keyboard="email-address" required />
+            <Field label="Phone" value={phone} onChange={setPhone} keyboard="phone-pad" />
+          </View>
+
+          {/* Shipping */}
+          <Text style={S.sectionTitle}>Shipping Address</Text>
+          <View style={S.card}>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Field label="First Name" value={firstName} onChange={setFirstName} required half />
+              <Field label="Last Name"  value={lastName}  onChange={setLastName}  required half />
+            </View>
+            <Field label="Address" value={address} onChange={setAddress} required />
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Field label="City" value={city} onChange={setCity} required half />
+              <Field label="ZIP"  value={zip}  onChange={setZip} keyboard="numeric" required half />
+            </View>
+            <Field label="Country" value={country} onChange={setCountry} />
+          </View>
+
+          {/* PAY BUTTON — at bottom after form */}
+          <View style={[S.card, { backgroundColor: 'rgba(184,115,51,0.06)', borderColor: 'rgba(184,115,51,0.2)', marginBottom: 12 }]}>
+            <Text style={{ color: '#B87333', fontSize: 12, fontWeight: '700', marginBottom: 4 }}>🔒 Secured by Stripe</Text>
+            <Text style={{ color: '#555', fontSize: 12, lineHeight: 18 }}>Apple Pay, Google Pay, and all major cards accepted.</Text>
+          </View>
+
+          <TouchableOpacity style={[S.primaryBtn, loading && { opacity: 0.6 }]} onPress={handlePay} disabled={loading}>
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={S.primaryBtnText}>🍎 Pay with Apple Pay / Card</Text>
+            }
+          </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+// ── Order Confirmation ─────────────────────────────────────────────────────────
+function OrderConfirmation({ order, designImage, onDone }) {
+  const [showJonModal, setShowJonModal] = React.useState(true);
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0D0D0D' }}>
+      <Modal visible={showJonModal} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#1A1A1A', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 32, borderTopWidth: 1, borderColor: '#2A2A2A' }}>
+            <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 16 }}>🏌️</Text>
+            <Text style={{ color: '#B87333', fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 20 }}>A note from Jon</Text>
+            <Text style={{ color: '#BFB8AF', fontSize: 15, lineHeight: 26, textAlign: 'center', marginBottom: 28 }}>
+              {"Thank you very much for your order.\n\nOrders ship in approximately 10-14 days from payment and finalized design.\n\nYou will receive an email when your order is getting ready to be shipped.\n\nRespectfully,\n\nJon"}
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: '#B87333', borderRadius: 16, paddingVertical: 18, alignItems: 'center' }}
+              onPress={() => setShowJonModal(false)}
+            >
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Thank you, Jon!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      <ScrollView contentContainerStyle={{ padding: 28, alignItems: 'center' }}>
+        <Text style={{ fontSize: 64, marginBottom: 16, marginTop: 60 }}>🎉</Text>
+        <Text style={{ color: '#F0EDE8', fontSize: 26, fontWeight: '900', marginBottom: 8, textAlign: 'center' }}>Order Placed!</Text>
+        <Text style={{ color: '#555', fontSize: 15, textAlign: 'center', lineHeight: 24, marginBottom: 28 }}>
+          Your custom copper marker is being crafted.{'\n'}A confirmation email is on its way.
+        </Text>
+        {designImage && (
+          <Image source={{ uri: designImage }} style={{ width: 180, height: 180, borderRadius: 90, marginBottom: 24, borderWidth: 2, borderColor: '#B8733344' }} resizeMode="contain" />
+        )}
+        <View style={[S.card, { width: '100%', marginBottom: 24 }]}>
+          <View style={S.rowBetween}><Text style={S.labelGrey}>Order #</Text><Text style={S.valueWhite}>{order && order.order_number ? order.order_number : '—'}</Text></View>
+          <View style={[S.rowBetween, { marginTop: 10 }]}><Text style={S.labelGrey}>Status</Text><Text style={{ color: '#4CAF72', fontWeight: '700', fontSize: 13 }}>Processing</Text></View>
+          <View style={[S.rowBetween, { marginTop: 10 }]}><Text style={S.labelTotal}>Total Paid</Text><Text style={S.valueTotal}>${order && order.total ? order.total : '115.00'}</Text></View>
+        </View>
+        <View style={[S.card, { width: '100%', backgroundColor: 'rgba(184,115,51,0.06)', borderColor: 'rgba(184,115,51,0.2)', marginBottom: 24 }]}>
+          <Text style={{ color: '#B87333', fontSize: 13, fontWeight: '700', marginBottom: 4 }}>What happens next?</Text>
+          <Text style={{ color: '#666', fontSize: 13, lineHeight: 20 }}>Your design has been sent to the GLM studio. Crafting takes 10-14 business days. You will receive tracking info via email once it ships.</Text>
+        </View>
+        <TouchableOpacity style={[S.primaryBtn, { width: '100%' }]} onPress={onDone}>
+          <Text style={S.primaryBtnText}>Back to Designer</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
+  );
+}
+
+// ── Main Designer Screen ───────────────────────────────────────────────────────
+function DesignerInner({ route }) {
+  const webRef = useRef(null);
+  const [loading,     setLoading]     = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [webViewKey, setWebViewKey] = useState(1);
+  const [screen,      setScreen]      = useState('designer');
+  const [order,       setOrder]       = useState(null);
+  const [designImage, setDesignImage] = useState(null);
+  const [designImageB, setDesignImageB] = useState(null);
+  const [designFinish, setDesignFinish] = useState('');
+  const [designSides, setDesignSides] = useState('');
+  const [designColorChoice, setDesignColorChoice] = useState('');
+  const [showColorModal, setShowColorModal] = useState(false);
+  const [pendingDesignData, setPendingDesignData] = useState(null);
+  const [designPrice, setDesignPrice] = useState('115');
+
+  const designerUrl = `${API_BASE}/designer-dashboard/`;
+  const startUrl    = route?.params?.url || designerUrl;
+
+  function handleNavChange(state) {
+    // We don't block any navigation — the designer handles its own flow.
+    // Our data capture happens via postMessage independently.
+  }
+
+  function onShouldStartLoadWithRequest(request) {
+    const url = request.url || '';
+    // Block the site's own cart/checkout pages from loading in the WebView.
+    // Our native cart/checkout handles this instead.
+    // Allow: designer-dashboard, login, wp-admin, wp-json (API calls), assets
+    const blocked = (
+      url.includes('/cart') ||
+      url.includes('/checkout') ||
+      url.includes('add-to-cart') ||
+      url.includes('wc-ajax')
+    ) && !url.includes('designer-dashboard');
+    if (blocked) return false; // Block — don't load this URL
+    return true; // Allow everything else
+  }
+
+  async function handleSaveDesignPng(imageDataUri) {
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow photo library access to save your design.');
+        return;
+      }
+      const base64 = imageDataUri.replace(/^data:image\/\w+;base64,/, '');
+      const ext = imageDataUri.includes('image/png') ? 'png' : 'jpg';
+      const fileUri = FileSystem.cacheDirectory + `glm-design-${Date.now()}.${ext}`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      await MediaLibrary.saveToLibraryAsync(fileUri);
+      Alert.alert('✓ Saved!', 'Your design has been saved to your photo library.');
+    } catch (e) {
+      Alert.alert('Save failed', 'Could not save the design. Please try again.');
+    }
+  }
+
+  function handleMessage(event) {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'design_meta') {
+        // Price, finish, sides arrive first
+        if (msg.finish) setDesignFinish(msg.finish);
+        if (msg.sides)  setDesignSides(msg.sides);
+        if (msg.price)  setDesignPrice(msg.price.replace(/[^0-9.]/g, '') || '115');
+      } else if (msg.type === 'design_image_a') {
+        if (msg.imageData) setDesignImage(msg.imageData);
+      } else if (msg.type === 'design_image_b') {
+        if (msg.imageData) setDesignImageB(msg.imageData);
+      } else if (msg.type === 'clear_image_b') {
+        setDesignImageB(null);
+      } else if (msg.type === 'show_color_modal') {
+        setShowColorModal(true);
+      } else if (msg.type === 'save_design_png') {
+        if (msg.imageData) handleSaveDesignPng(msg.imageData);
+      }
+    } catch (e) {}
+  }
+
+  function goToDesigner() {
+    setDesignImage(null);
+    setDesignImageB(null);
+    setDesignPrice('115');
+    setDesignFinish('');
+    setDesignSides('');
+    setDesignColorChoice('');
+    setShowColorModal(false);
+    setHasError(false);
+    setScreen('designer');
+    // Increment key — forces WebView to fully remount with fresh INJECT_JS
+    setWebViewKey(k => k + 1);
+  }
+
+  function reloadDesigner() {
+    setDesignImage(null);
+    setDesignImageB(null);
+    setDesignPrice('115');
+    setDesignFinish('');
+    setDesignSides('');
+    setShowColorModal(false);
+    setHasError(false);
+    setScreen('designer');
+    // Full reload — clears cache, re-injects JS on load
+    webRef.current?.reload();
+  }
+
+  function chooseColor(choice) {
+    setDesignColorChoice(choice);
+    setShowColorModal(false);
+    setScreen('cart');
+  }
+
+  if (screen === 'cart')         return <NativeCart onBack={goToDesigner} onCheckout={() => setScreen('checkout')} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
+  if (screen === 'checkout')     return <CheckoutScreen onBack={() => setScreen('cart')} onSuccess={(o) => { setOrder(o); setScreen('confirmation'); }} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
+  if (screen === 'confirmation') return <OrderConfirmation order={order} designImage={designImage} onDone={goToDesigner} />;
+
+  return (
+    <View style={S.container}>
+      <View style={S.topBar}>
+        <View style={{ width: 80 }} />
+        <Text style={S.topBarTitle}>Designer</Text>
+        <TouchableOpacity
+          style={{ width: 80, alignItems: 'flex-end', paddingRight: 4 }}
+          onPress={reloadDesigner}
+        >
+          <Text style={{ fontSize: 11, color: '#B87333', fontWeight: '700', letterSpacing: 0.3 }}>⟳ REFRESH</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Color Choice Modal */}
+      <Modal visible={showColorModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#1A1A1A', borderRadius: 20, padding: 28, width: '100%', borderWidth: 1, borderColor: '#2A2A2A' }}>
+            <Text style={{ color: '#B87333', fontSize: 18, fontWeight: '800', marginBottom: 8, textAlign: 'center' }}>🎨 Color Selection</Text>
+            <Text style={{ color: '#BFB8AF', fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 24 }}>
+              Would you like Jon to handpick the colors for your design, or keep the colors you selected?
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: '#B87333', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }}
+              onPress={() => chooseColor('Let Jon Pick Colors')}
+            >
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Let Jon Pick Colors 🎨</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>Jon will choose colors that suit your design</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ backgroundColor: '#1A3326', borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: '#2A4A36' }}
+              onPress={() => chooseColor('Customer Selected Colors')}
+            >
+              <Text style={{ color: '#F0EDE8', fontWeight: '800', fontSize: 15 }}>Keep My Colors ✓</Text>
+              <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>Use the colors I already selected</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {loading && !hasError && (
+        <View style={S.loader}>
+          <Image source={require('../../assets/logo.jpg')} style={S.loaderLogo} resizeMode="contain" />
+          <ActivityIndicator size="large" color={GLM_COLORS.copper} style={{ marginTop: 24 }} />
+          <Text style={S.loaderTitle}>Loading Designer</Text>
+          <Text style={S.loaderSub}>Setting up your canvas…</Text>
+        </View>
+      )}
+
+      {/* Friendly error screen — shown when network fails */}
+      {hasError && (
+        <View style={{ flex: 1, backgroundColor: '#0D0D0D', justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <Image source={require('../../assets/logo.jpg')} style={{ width: 80, height: 80, borderRadius: 16, marginBottom: 24 }} resizeMode="contain" />
+          <Text style={{ fontSize: 22, fontWeight: '800', color: '#F0EDE8', marginBottom: 12, textAlign: 'center' }}>Connection Lost</Text>
+          <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 22, marginBottom: 32 }}>
+            Unable to reach the GLM designer.{' '}Please check your internet connection and try again.
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor: '#B87333', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 }}
+            onPress={reloadDesigner}
+          >
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>⟳  Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={{ flex: 1 }}>
+        <WebView
+          key={webViewKey}
+          ref={webRef}
+          source={{ uri: startUrl }}
+          style={[S.webview, (loading || hasError) && { opacity: 0, height: 0 }]}
+          injectedJavaScriptBeforeContentLoaded={`window.__glmIsApp=true;true;`}
+          injectedJavaScript={INJECT_JS}
+          onLoadEnd={() => {
+            setLoading(false);
+            setHasError(false);
+            webRef.current?.injectJavaScript(INJECT_JS);
+          }}
+          onLoadStart={() => { setLoading(true); setHasError(false); }}
+          onError={() => { setLoading(false); setHasError(true); }}
+          onHttpError={() => { setLoading(false); setHasError(true); }}
+          onNavigationStateChange={handleNavChange}
+          onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
+          onMessage={handleMessage}
+          javaScriptEnabled domStorageEnabled allowsInlineMediaPlayback
+          mediaPlaybackRequiresUserAction={false} mixedContentMode="always"
+          sharedCookiesEnabled thirdPartyCookiesEnabled
+          userAgent="GLMDesignerApp/1.0 (ReactNative)"
+        />
+      </View>
+    </View>
+  );
+}
+
+export default function DesignerScreen({ route }) {
+  return (
+    <StripeProvider publishableKey={STRIPE_PK} merchantIdentifier="merchant.com.golflifemetals.glmdesigner">
+      <DesignerInner route={route} />
+    </StripeProvider>
+  );
+}
+
 const S = StyleSheet.create({
-  root:             { flex: 1, backgroundColor: '#F5F0EB' },
-  canvasArea:       { backgroundColor: '#EBEBEB', paddingBottom: 12 },
-  cinfo:            { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#F8F8F8', borderBottomWidth: 1, borderBottomColor: '#E8E8E8', paddingTop: 52 },
-  cinfoText:        { fontSize: 9, color: '#888', fontFamily: 'monospace' },
-  cinfoSep:         { fontSize: 9, color: '#CCC' },
-  sideBar:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E8E8E8' },
-  sideSwitch:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  sideLbl:          { fontSize: 11, color: '#666', fontWeight: '600' },
-  sideBtn:          { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, borderWidth: 1, borderColor: '#DDD', backgroundColor: '#F5F5F5' },
-  sideBtnOn:        { backgroundColor: '#111', borderColor: '#111' },
-  sideBtnTxt:       { fontSize: 11, color: '#666', fontWeight: '600' },
-  sideBtnTxtOn:     { color: '#fff' },
-  priceLbl:         { fontSize: 9, color: '#999', letterSpacing: 0.5, textTransform: 'uppercase' },
-  priceBig:         { fontSize: 20, fontWeight: '800', color: '#111' },
-  canvasWrap:       { alignSelf: 'center', marginTop: 8, marginBottom: 4 },
-  undoRow:          { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 8 },
-  undoBtn:          { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#DDD', backgroundColor: '#fff' },
-  undoBtnText:      { fontSize: 13, color: '#444', fontWeight: '600' },
-  sizeNote:         { textAlign: 'center', fontSize: 9, color: '#AAA', marginTop: 6, fontFamily: 'monospace' },
-  section:          { backgroundColor: '#fff', marginTop: 8, padding: 16 },
-  secHeader:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
-  secNum:           { width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: '#DDD', alignItems: 'center', justifyContent: 'center' },
-  secNumText:       { fontSize: 13, fontWeight: '700', color: '#555' },
-  secTitle:         { fontSize: 16, fontWeight: '700', color: '#111' },
-  finishGrid:       { flexDirection: 'row', gap: 10 },
-  fcard:            { flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: '#DDD', padding: 12, alignItems: 'center', backgroundColor: '#FAFAFA' },
-  fcardOn:          { borderColor: '#B87333', backgroundColor: '#fff' },
-  fimg:             { width: 56, height: 56, borderRadius: 28, marginBottom: 8 },
-  fname:            { fontSize: 12, color: '#444', fontWeight: '600', textAlign: 'center', marginBottom: 8 },
-  fradio:           { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: '#DDD' },
-  fradioOn:         { borderColor: '#B87333', backgroundColor: '#B87333' },
-  sidesRow:         { gap: 8 },
-  sideOption:       { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#EEE' },
-  sideOptionOn:     { borderColor: '#B87333', backgroundColor: '#FFF8F0' },
-  sideOptionText:   { fontSize: 14, color: '#888' },
-  subLabel:         { fontSize: 9, color: '#999', fontWeight: '700', letterSpacing: 1, marginBottom: 8, marginTop: 4 },
-  presetsList:      { gap: 6, marginBottom: 16 },
-  presetRow:        { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#EEE', backgroundColor: '#FAFAFA' },
-  presetIcon:       { fontSize: 16, color: '#555', width: 32, textAlign: 'center' },
-  presetLabel:      { fontSize: 13, color: '#333', fontWeight: '500' },
-  inkGrid:          { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  inkSwatch:        { width: 30, height: 30, borderRadius: 4 },
-  inkSwatchOn:      { transform: [{ scale: 1.25 }], shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  addRow:           { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 8, borderWidth: 1, borderColor: '#E8E8E8', borderStyle: 'dashed', marginBottom: 8 },
-  addRowIcon:       { fontSize: 18, color: '#888', width: 24, textAlign: 'center', fontWeight: '700' },
-  addRowText:       { fontSize: 14, color: '#555', fontWeight: '600' },
-  shapesGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  shapeBtn:         { width: 48, height: 48, borderRadius: 8, borderWidth: 1, borderColor: '#E0E0E0', backgroundColor: '#FAFAFA', alignItems: 'center', justifyContent: 'center' },
-  shapeBtnIcon:     { fontSize: 20, color: '#333' },
-  selectedActions:  { marginTop: 12, padding: 12, backgroundColor: '#FFF8F0', borderRadius: 10, borderWidth: 1, borderColor: '#F0D0A0' },
-  selectedLabel:    { fontSize: 11, color: '#B87333', fontWeight: '700', marginBottom: 8 },
-  deleteSelectedBtn:{ borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 8, paddingVertical: 10, alignItems: 'center', backgroundColor: '#fff' },
-  deleteSelectedTxt:{ color: '#888', fontSize: 13, fontWeight: '600' },
-  bottomBar:        { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E8E8E8', padding: 12, paddingBottom: 28 },
-  priceBlock:       { marginBottom: 10 },
-  bottomPriceLabel: { fontSize: 11, color: '#888' },
-  bottomPrice:      { fontSize: 28, fontWeight: '800', color: '#111', lineHeight: 32 },
-  bottomPriceSub:   { fontSize: 11, color: '#B87333', fontWeight: '600' },
-  bottomBtns:       { flexDirection: 'row', gap: 10 },
-  savePngBtn:       { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#F0EDE8', borderWidth: 1, borderColor: '#DDD', alignItems: 'center' },
-  savePngTxt:       { fontSize: 14, color: '#444', fontWeight: '700' },
-  orderBtn:         { flex: 2, paddingVertical: 14, borderRadius: 10, backgroundColor: '#111', alignItems: 'center' },
-  orderBtnTxt:      { fontSize: 14, color: '#fff', fontWeight: '800' },
-  szBtn:            { flex: 1, paddingVertical: 8, borderRadius: 6, backgroundColor: '#F5F5F5', borderWidth: 1, borderColor: '#E0E0E0', alignItems: 'center' },
-  szBtnOn:          { backgroundColor: '#111', borderColor: '#111' },
-  szTxt:            { fontSize: 11, color: '#666', fontWeight: '700' },
-  szTxtOn:          { color: '#fff' },
-  scard:            { flex: 1, margin: 5, borderRadius: 8, borderWidth: 1, borderColor: '#E8E8E8', padding: 10, alignItems: 'center', backgroundColor: '#FAFAFA' },
-  sname:            { fontSize: 9, color: '#555', textAlign: 'center', marginTop: 4 },
-  sprice:           { fontSize: 9, color: '#888', marginTop: 2 },
-  cartCard:         { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#E8E8E8', padding: 16, marginBottom: 14 },
-  cartSectionLabel: { color: '#999', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' },
-  cartRow:          { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  cartLabel:        { color: '#888', fontSize: 13 },
-  cartValue:        { color: '#111', fontSize: 13, fontWeight: '600' },
+  container:          { flex: 1, backgroundColor: '#0D0D0D' },
+  topBar:             { backgroundColor: '#1A3326', paddingTop: 54, paddingBottom: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#B87333'+'33', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topBarTitle:        { color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 0.3 },
+  webview:            { flex: 1 },
+  loader:             { ...StyleSheet.absoluteFillObject, top: 88, backgroundColor: '#0D0D0D', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  loaderLogo:         { width: 72, height: 72, borderRadius: 18, borderWidth: 1, borderColor: '#B87333'+'44' },
+  loaderTitle:        { color: '#F0EDE8', fontSize: 17, fontWeight: '700', marginTop: 16 },
+  loaderSub:          { color: '#555', fontSize: 13, marginTop: 6 },
+  page:               { flex: 1, backgroundColor: '#0D0D0D' },
+  header:             { backgroundColor: '#1A3326', paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#B87333'+'33', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerTitle:        { color: '#fff', fontWeight: '800', fontSize: 18 },
+  backBtn:            { backgroundColor: 'rgba(184,115,51,0.15)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#B87333'+'55' },
+  backText:           { color: '#B87333', fontSize: 13, fontWeight: '700' },
+  card:               { backgroundColor: '#161616', borderRadius: 18, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A' },
+  rowBetween:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  itemName:           { color: '#F0EDE8', fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  itemSub:            { color: '#555', fontSize: 12 },
+  itemPrice:          { color: '#B87333', fontSize: 18, fontWeight: '800' },
+  sep:                { height: 1, backgroundColor: '#2A2A2A', marginVertical: 14 },
+  labelGrey:          { color: '#555', fontSize: 14 },
+  valueWhite:         { color: '#F0EDE8', fontSize: 14, fontWeight: '600' },
+  labelTotal:         { color: '#F0EDE8', fontSize: 16, fontWeight: '700' },
+  valueTotal:         { color: '#B87333', fontSize: 18, fontWeight: '800' },
+  primaryBtn:         { backgroundColor: '#B87333', borderRadius: 16, paddingVertical: 18, alignItems: 'center', marginBottom: 12, shadowColor: '#B87333', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16 },
+  primaryBtnText:     { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  ghostBtn:           { paddingVertical: 14, alignItems: 'center' },
+  ghostBtnText:       { color: '#555', fontSize: 14, fontWeight: '600' },
+  sectionTitle:       { color: '#F0EDE8', fontSize: 16, fontWeight: '700', marginBottom: 12, marginTop: 4 },
+  sectionLabel:       { color: '#555', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 },
+  fieldLabel:         { color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  fieldInput:         { backgroundColor: '#1E1E1E', borderRadius: 12, borderWidth: 1, borderColor: '#2A2A2A', color: '#F0EDE8', fontSize: 15, paddingHorizontal: 16, paddingVertical: 13 },
+  designPreviewWrap:  { backgroundColor: '#161616', borderRadius: 18, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A' },
+  designPreview:      { width: '100%', height: 200, borderRadius: 12 },
+  designPlaceholder:  { width: '100%', height: 160, borderRadius: 12, backgroundColor: '#1E1E1E', alignItems: 'center', justifyContent: 'center' },
 });
