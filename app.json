@@ -1,24 +1,37 @@
 {
   "expo": {
-    "name": "GLM-MobileApp-v1-app",
-    "slug": "GLM-MobileApp-v1-app",
+    "name": "GLM Designer",
+    "slug": "glm-mobileapp-v1",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.jpg",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/icon.jpg",
+      "resizeMode": "contain",
+      "backgroundColor": "#111111"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.golflifemetals.glmdesigner"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+        "foregroundImage": "./assets/icon.jpg",
+        "backgroundColor": "#111111"
+      },
+      "package": "com.golflifemetals.glmdesigner"
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      "expo-image-picker",
+      "expo-media-library",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.jpg",
+          "color": "#B87333"
+        }
+      ]
+    ]
   }
 }
