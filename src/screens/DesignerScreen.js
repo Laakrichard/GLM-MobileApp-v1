@@ -776,16 +776,18 @@ function DesignerInner({ route }) {
           ref={webRef}
           source={{ uri: startUrl }}
           style={[S.webview, (loading || hasError) && { opacity: 0, height: 0 }]}
-          injectedJavaScriptBeforeContentLoaded={`window.__glmIsApp=true;true;`}
-          injectedJavaScript={INJECT_JS}
+          injectedJavaScriptBeforeContentLoaded={`window.__glmIsApp=true;window.__glmInjected=false;true;`}
           onLoadEnd={() => {
             setLoading(false);
             setHasError(false);
-            // Reset guard so INJECT_JS always runs clean on each load
-            webRef.current?.injectJavaScript(`window.__glmInjected = false; true;`);
+            // Wait for the page JS (designer.js) to fully initialize before injecting
+            // 800ms gives Fabric.js + GLM_CONFIG time to load
             setTimeout(() => {
-              webRef.current?.injectJavaScript(INJECT_JS);
-            }, 100);
+              webRef.current?.injectJavaScript(`window.__glmInjected = false; true;`);
+              setTimeout(() => {
+                webRef.current?.injectJavaScript(INJECT_JS);
+              }, 100);
+            }, 800);
           }}
           onLoadStart={() => { setLoading(true); setHasError(false); }}
           onError={() => { setLoading(false); setHasError(true); }}
