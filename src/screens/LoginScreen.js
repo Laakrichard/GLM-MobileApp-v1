@@ -25,6 +25,16 @@ export default function LoginScreen({ navigation }) {
         await AsyncStorage.setItem('glm_token',    data.token);
         await AsyncStorage.setItem('glm_username', data.user_display_name || email);
         await AsyncStorage.setItem('glm_email',    data.user_email || email);
+        // Fetch role from /me endpoint so Admin tab shows for admins
+        try {
+          const meRes  = await fetch(`${API_BASE}/wp-json/glm/v1/me`, {
+            headers: { Authorization: `Bearer ${data.token}` }
+          });
+          const meData = await meRes.json();
+          await AsyncStorage.setItem('glm_role', meData.user_role || 'customer');
+        } catch(e) {
+          await AsyncStorage.setItem('glm_role', 'customer');
+        }
         navigation.replace('Main');
       } else {
         Alert.alert('Sign in failed', data.message || 'Invalid credentials');

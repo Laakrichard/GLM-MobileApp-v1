@@ -139,7 +139,9 @@ function glm_api_register( WP_REST_Request $request ) {
     wp_update_user([ 'ID' => $user_id, 'display_name' => $name, 'first_name' => explode( ' ', $name )[0] ]);
     $token = '';
     if ( function_exists( 'jwt_auth_generate_token' ) ) $token = jwt_auth_generate_token( get_user_by( 'id', $user_id ) );
-    return rest_ensure_response([ 'token' => $token, 'user_display_name' => $name, 'user_email' => $email, 'message' => 'Account created' ]);
+    $user = get_user_by('id', $user_id);
+    $role = !empty($user->roles) ? $user->roles[0] : 'customer';
+    return rest_ensure_response([ 'token' => $token, 'user_display_name' => $name, 'user_email' => $email, 'user_role' => $role, 'message' => 'Account created' ]);
 }
 
 // ── POST create-payment-intent ────────────────────────────────────────────────
@@ -455,6 +457,13 @@ function glm_api_get_user_from_request( WP_REST_Request $request ) {
 // ── STAMPS endpoints (added for GLM MobileApp v1) ────────────────────────────
 add_action('rest_api_init', function() {
 
+    // GET /wp-json/glm/v1/me — get current user info including role
+    register_rest_route('glm/v1', '/me', [
+        'methods'             => 'GET',
+        'callback'            => 'glm_get_me',
+        'permission_callback' => '__return_true',
+    ]);
+
     // GET /wp-json/glm/v1/stamps — fetch all stamps for the native designer
     register_rest_route('glm/v1', '/stamps', [
         'methods'             => 'GET',
@@ -511,6 +520,19 @@ add_action('rest_api_init', function() {
         'permission_callback' => 'glm_is_admin',
     ]);
 });
+
+function glm_get_me() {
+    $user = wp_get_current_user();
+    if (!$user || !$user->ID) return new WP_Error('not_logged_in', 'Not logged in', ['status' => 401]);
+    $role = !empty($user->roles) ? $user->roles[0] : 'customer';
+    return rest_ensure_response([
+        'id'           => $user->ID,
+        'name'         => $user->display_name,
+        'email'        => $user->user_email,
+        'user_role'    => $role,
+        'is_admin'     => in_array($role, ['administrator', 'editor', 'shop_manager']),
+    ]);
+}
 
 function glm_is_admin() {
     $user = wp_get_current_user();
