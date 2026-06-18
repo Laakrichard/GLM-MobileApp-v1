@@ -21,13 +21,6 @@ const INJECT_JS = `
   if (window.__glmInjected) return;
   window.__glmInjected = true;
 
-  // ── Load stamps from API ─────────────────────────────────────────────────────
-  try {
-    if (typeof window.__loadStampsFromAPI === 'function') {
-      window.__loadStampsFromAPI('${API_BASE}');
-    }
-  } catch(e) {}
-
   // ── 1. Hide site chrome + designer color-check lightbox ────────────────────
   var _hideCSS = document.createElement('style');
   _hideCSS.innerHTML = 'header,footer,nav,aside,.site-header,#site-header,#masthead,.site-footer,#colophon,.main-navigation,.elementor-location-header,.elementor-location-footer,[data-elementor-type="header"],[data-elementor-type="footer"],#wpadminbar,.menu-toggle,.hamburger,.site-branding,.woocommerce-breadcrumb,#secondary,.widget-area{display:none!important;height:0!important;overflow:hidden!important;padding:0!important;margin:0!important;}body,html{padding:0!important;margin:0!important;}';
@@ -148,16 +141,16 @@ const INJECT_JS = `
             var stampCost = 0;
             objs.forEach(function(o){
               if(o._stamp){
-                if(o._stampSize==='small')  stampCost += (window._drlaak_stampSmall||3);
-                if(o._stampSize==='medium') stampCost += (window._drlaak_stampMedium||7);
-                if(o._stampSize==='large')  stampCost += (window._drlaak_stampLarge||15);
+                if(o._stampSize==='small')  stampCost += (window._drlaak_stampSmall||1);
+                if(o._stampSize==='medium') stampCost += (window._drlaak_stampMedium||2);
+                if(o._stampSize==='large')  stampCost += (window._drlaak_stampLarge||3);
               }
             });
             var letters = 0;
             objs.forEach(function(o){ if(o._isText||o.type==='i-text') letters+=(o.text||'').replace(/\s/g,'').length; });
             var shapes = 0;
             objs.forEach(function(o){ if(o._shape) shapes++; });
-            var elementCost = stampCost + letters*(window._drlaak_textLetter||3) + shapes*(window._drlaak_shapeEach||3);
+            var elementCost = stampCost + letters*(window._drlaak_textLetter||1) + shapes*(window._drlaak_shapeEach||1);
             price = basePrice + elementCost;
           } catch(ce) { price = basePrice; }
         }
@@ -281,30 +274,12 @@ true;
 
 // ── Native Cart ────────────────────────────────────────────────────────────────
 function NativeCart({ onBack, onCheckout, designImage, designImageB, price, finish, sides, colorChoice }) {
-  const [cancelling, setCancelling] = React.useState(false);
-
-  function handleCancel() {
-    Alert.alert(
-      'Cancel Order?',
-      'This will clear your current design and return you to the designer.',
-      [
-        { text: 'Keep Order', style: 'cancel' },
-        { text: 'Cancel Order', style: 'destructive', onPress: () => onBack() },
-      ]
-    );
-  }
-
   return (
     <View style={S.page}>
       <View style={S.header}>
         <View style={{ width: 90 }} />
         <Text style={S.headerTitle}>Your Cart</Text>
-        <TouchableOpacity
-          style={{ backgroundColor: 'rgba(224,82,82,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(224,82,82,0.4)' }}
-          onPress={handleCancel}
-        >
-          <Text style={{ color: '#E05252', fontSize: 12, fontWeight: '800' }}>✕ Cancel Order</Text>
-        </TouchableOpacity>
+        <View style={{ width: 90 }} />
       </View>
       <ScrollView contentContainerStyle={{ padding: 20 }}>
 
@@ -612,9 +587,8 @@ function DesignerInner({ route }) {
   const [pendingDesignData, setPendingDesignData] = useState(null);
   const [designPrice, setDesignPrice] = useState('115');
 
-  // Load designer from bundled local HTML — no network needed
-  const designerUrl = null; // unused
-  const startUrl = null;    // unused — WebView uses require() directly
+  const designerUrl = `${API_BASE}/designer-dashboard/`;
+  const startUrl    = route?.params?.url || designerUrl;
 
   function handleNavChange(state) {
     // We don't block any navigation — the designer handles its own flow.
@@ -686,8 +660,7 @@ function DesignerInner({ route }) {
     setShowColorModal(false);
     setHasError(false);
     setScreen('designer');
-    // Increment key — fully remounts WebView with fresh page load
-    // onLoadEnd will reset guard and re-inject INJECT_JS
+    // Increment key — forces WebView to fully remount with fresh INJECT_JS
     setWebViewKey(k => k + 1);
   }
 
@@ -710,8 +683,31 @@ function DesignerInner({ route }) {
     setScreen('cart');
   }
 
-  if (screen === 'cart')         return <NativeCart onBack={goToDesigner} onCheckout={() => setScreen('checkout')} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
-  if (screen === 'checkout')     return <CheckoutScreen onBack={() => setScreen('cart')} onSuccess={(o) => { setOrder(o); setScreen('confirmation'); }} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
+  // Lock navigation when in cart/checkout/confirmation — user cannot leave until done
+  React.useEffect(() => {
+    if (navigation) {
+      if (screen === 'cart' || screen === 'checkout' || screen === 'confirmation') {
+        // Disable swipe back and hide tab bar
+        navigation.setOptions({ gestureEnabled: false });
+        navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+      } else {
+        navigation.setOptions({ gestureEnabled: true });
+        navigation.getParent()?.setOptions({
+          tabBarStyle: {
+            backgroundColor: 'rgba(12,12,18,0.95)',
+            borderTopColor: 'rgba(255,255,255,0.07)',
+            borderTopWidth: 1,
+            paddingBottom: 8,
+            paddingTop: 8,
+            height: 68,
+          }
+        });
+      }
+    }
+  }, [screen, navigation]);
+
+  if (screen === 'cart')         return <NativeCart onBack={null} onCheckout={() => setScreen('checkout')} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
+  if (screen === 'checkout')     return <CheckoutScreen onBack={null} onSuccess={(o) => { setOrder(o); setScreen('confirmation'); }} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
   if (screen === 'confirmation') return <OrderConfirmation order={order} designImage={designImage} onDone={goToDesigner} />;
 
   return (
@@ -782,29 +778,14 @@ function DesignerInner({ route }) {
         <WebView
           key={webViewKey}
           ref={webRef}
-          source={require('../../assets/designer/index.html')}
+          source={{ uri: startUrl }}
           style={[S.webview, (loading || hasError) && { opacity: 0, height: 0 }]}
-          injectedJavaScriptBeforeContentLoaded={`window.__glmIsApp=true;window.__glmInjected=false;true;`}
+          injectedJavaScriptBeforeContentLoaded={`window.__glmIsApp=true;true;`}
+          injectedJavaScript={INJECT_JS}
           onLoadEnd={() => {
             setLoading(false);
             setHasError(false);
-            // Local HTML — Fabric.js loads from CDN, wait for it
-            // then inject our intercept code
-            const tryInject = (attempts) => {
-              webRef.current?.injectJavaScript(`
-                if (typeof fabric !== 'undefined' && typeof canvas !== 'undefined') {
-                  window.__glmInjected = false;
-                  true;
-                } else {
-                  window.__glmFabricReady = false;
-                  true;
-                }
-              `);
-              setTimeout(() => {
-                webRef.current?.injectJavaScript(INJECT_JS);
-              }, 200);
-            };
-            setTimeout(() => tryInject(0), 1500);
+            webRef.current?.injectJavaScript(INJECT_JS);
           }}
           onLoadStart={() => { setLoading(true); setHasError(false); }}
           onError={() => { setLoading(false); setHasError(true); }}
