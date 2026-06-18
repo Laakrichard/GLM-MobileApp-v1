@@ -571,7 +571,7 @@ function OrderConfirmation({ order, designImage, onDone }) {
 }
 
 // ── Main Designer Screen ───────────────────────────────────────────────────────
-function DesignerInner({ route }) {
+function DesignerInner({ route, navigation }) {
   const webRef = useRef(null);
   const [loading,     setLoading]     = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -685,14 +685,11 @@ function DesignerInner({ route }) {
 
   // Lock navigation when in cart/checkout/confirmation — user cannot leave until done
   React.useEffect(() => {
-    if (navigation) {
+    try {
       if (screen === 'cart' || screen === 'checkout' || screen === 'confirmation') {
-        // Disable swipe back and hide tab bar
-        navigation.setOptions({ gestureEnabled: false });
-        navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+        navigation?.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
       } else {
-        navigation.setOptions({ gestureEnabled: true });
-        navigation.getParent()?.setOptions({
+        navigation?.getParent()?.setOptions({
           tabBarStyle: {
             backgroundColor: 'rgba(12,12,18,0.95)',
             borderTopColor: 'rgba(255,255,255,0.07)',
@@ -703,8 +700,8 @@ function DesignerInner({ route }) {
           }
         });
       }
-    }
-  }, [screen, navigation]);
+    } catch(e) {}
+  }, [screen]);
 
   if (screen === 'cart')         return <NativeCart onBack={null} onCheckout={() => setScreen('checkout')} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
   if (screen === 'checkout')     return <CheckoutScreen onBack={null} onSuccess={(o) => { setOrder(o); setScreen('confirmation'); }} designImage={designImage} designImageB={designImageB} price={designPrice} finish={designFinish} sides={designSides} colorChoice={designColorChoice} />;
@@ -803,10 +800,10 @@ function DesignerInner({ route }) {
   );
 }
 
-export default function DesignerScreen({ route }) {
+export default function DesignerScreen({ route, navigation }) {
   return (
     <StripeProvider publishableKey={STRIPE_PK} merchantIdentifier="merchant.com.golflifemetals.glmdesigner">
-      <DesignerInner route={route} />
+      <DesignerInner route={route} navigation={navigation} />
     </StripeProvider>
   );
 }
