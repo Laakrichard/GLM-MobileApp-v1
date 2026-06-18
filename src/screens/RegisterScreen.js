@@ -38,7 +38,7 @@ export default function RegisterScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Image source={require('../assets/logo.jpg')} style={styles.logo} resizeMode="contain" />
+      <Image source={require('../../assets/logo.jpg')} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>Create Account</Text>
       <Text style={styles.sub}>Join the GLM community</Text>
 

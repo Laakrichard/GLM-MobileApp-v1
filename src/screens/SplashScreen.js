@@ -33,7 +33,7 @@ export default function SplashScreen({ onDone }) {
   return (
     <View style={S.container}>
       <Animated.Image
-        source={require('../assets/icon.jpg')}
+        source={require('../../assets/icon.jpg')}
         style={[S.logo, { opacity, transform: [{ scale }, { translateY }] }]}
         resizeMode="contain"
       />

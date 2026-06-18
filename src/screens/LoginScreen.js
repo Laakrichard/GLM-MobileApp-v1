@@ -38,7 +38,7 @@ export default function LoginScreen({ navigation }) {
   return (
     <ScrollView contentContainerStyle={S.container} keyboardShouldPersistTaps="handled">
       <View style={S.logoWrap}>
-        <Image source={require('../assets/logo.jpg')} style={S.logo} resizeMode="contain" />
+        <Image source={require('../../assets/logo.jpg')} style={S.logo} resizeMode="contain" />
       </View>
 
       <Text style={S.brand}>Golf Life Metals</Text>

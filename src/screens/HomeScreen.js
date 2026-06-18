@@ -46,7 +46,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={S.greeting}>Welcome back</Text>
           <Text style={S.name}>{firstName}</Text>
         </View>
-        <Image source={require('../assets/logo.jpg')} style={S.logoMark} resizeMode="contain" />
+        <Image source={require('../../assets/logo.jpg')} style={S.logoMark} resizeMode="contain" />
       </View>
 
       {/* Hero */}

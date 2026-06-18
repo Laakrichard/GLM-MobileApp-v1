@@ -94,7 +94,7 @@ export default function ProfileScreen({ navigation }) {
 
       {/* Footer */}
       <View style={S.footer}>
-        <Image source={require('../assets/logo.jpg')} style={S.footerLogo} resizeMode="contain" />
+        <Image source={require('../../assets/logo.jpg')} style={S.footerLogo} resizeMode="contain" />
         <Text style={S.footerText}>Golf Life Metals</Text>
         <Text style={S.footerTagline}>Premium Copper Markers</Text>
       </View>

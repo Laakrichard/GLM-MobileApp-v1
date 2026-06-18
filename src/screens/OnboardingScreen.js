@@ -9,10 +9,10 @@ const { width, height } = Dimensions.get('window');
 const AUTO_INTERVAL = 3500;
 
 const SLIDES = [
-  { image: require('../assets/onboarding/slide1.jpg') },
-  { image: require('../assets/onboarding/slide2.jpg') },
-  { image: require('../assets/onboarding/slide3.jpg') },
-  { image: require('../assets/onboarding/slide4.jpg') },
+  { image: require('../../assets/onboarding/slide1.jpg') },
+  { image: require('../../assets/onboarding/slide2.jpg') },
+  { image: require('../../assets/onboarding/slide3.jpg') },
+  { image: require('../../assets/onboarding/slide4.jpg') },
 ];
 
 export default function OnboardingScreen({ onDone }) {
