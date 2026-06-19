@@ -135,6 +135,23 @@ function glm_api_get_my_orders( WP_REST_Request $request ) {
 
 // ── POST register ─────────────────────────────────────────────────────────────
 function glm_api_register( WP_REST_Request $request ) {
+    // ── Rate limiting — max 3 accounts per IP per hour ────────────────────────
+    $ip         = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $rate_key   = 'glm_reg_' . md5($ip);
+    $attempts   = (int) get_transient($rate_key);
+    if ($attempts >= 3) {
+        return new WP_Error('rate_limited', 'Too many accounts created from this IP. Please try again later.', ['status' => 429]);
+    }
+    set_transient($rate_key, $attempts + 1, HOUR_IN_SECONDS);
+
+    // ── Block disposable/suspicious email domains ─────────────────────────────
+    $email          = sanitize_email($request->get_param('email') ?? '');
+    $blocked_domains = ['mailinator.com','guerrillamail.com','tempmail.com','throwam.com','yopmail.com','trashmail.com','fakeinbox.com','10minutemail.com'];
+    $email_domain   = strtolower(substr(strrchr($email, '@'), 1));
+    if (in_array($email_domain, $blocked_domains)) {
+        return new WP_Error('invalid_email', 'Please use a valid email address.', ['status' => 400]);
+    }
+
     $name     = sanitize_text_field( $request->get_param( 'name' )     ?? '' );
     $email    = sanitize_email(      $request->get_param( 'email' )    ?? '' );
     $password = $request->get_param( 'password' ) ?? '';
@@ -145,10 +162,12 @@ function glm_api_register( WP_REST_Request $request ) {
     $user_id  = wp_create_user( $username, $password, $email );
     if ( is_wp_error( $user_id ) ) return new WP_Error( 'register_failed', $user_id->get_error_message(), [ 'status' => 400 ] );
     wp_update_user([ 'ID' => $user_id, 'display_name' => $name, 'first_name' => explode( ' ', $name )[0] ]);
+    // Force customer role — never allow admin rights via app registration
+    $user_obj = get_user_by('id', $user_id);
+    $user_obj->set_role('customer');
     $token = '';
     if ( function_exists( 'jwt_auth_generate_token' ) ) $token = jwt_auth_generate_token( get_user_by( 'id', $user_id ) );
-    $user = get_user_by('id', $user_id);
-    $role = !empty($user->roles) ? $user->roles[0] : 'customer';
+    $role = 'customer';
     return rest_ensure_response([ 'token' => $token, 'user_display_name' => $name, 'user_email' => $email, 'user_role' => $role, 'message' => 'Account created' ]);
 }
 
