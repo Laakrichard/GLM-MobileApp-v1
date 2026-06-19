@@ -23,10 +23,32 @@ export default function RegisterScreen({ navigation }) {
       });
       const data = await res.json();
       if (data.token) {
+        // Account created and token returned
         await AsyncStorage.setItem('glm_token',    data.token);
-        await AsyncStorage.setItem('glm_username', name);
-        await AsyncStorage.setItem('glm_email',    email);
+        await AsyncStorage.setItem('glm_username', data.user_display_name || name);
+        await AsyncStorage.setItem('glm_email',    data.user_email || email);
+        await AsyncStorage.setItem('glm_role',     data.user_role || 'customer');
         navigation.replace('Main');
+      } else if (data.message === 'Account created') {
+        // Account created but JWT token not returned — auto login
+        const loginRes  = await fetch(`${API_BASE}/wp-json/jwt-auth/v1/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: email, password }),
+        });
+        const loginData = await loginRes.json();
+        if (loginData.token) {
+          await AsyncStorage.setItem('glm_token',    loginData.token);
+          await AsyncStorage.setItem('glm_username', name);
+          await AsyncStorage.setItem('glm_email',    email);
+          await AsyncStorage.setItem('glm_role',     'customer');
+          navigation.replace('Main');
+        } else {
+          // Account created but login failed — redirect to login
+          Alert.alert('Account Created!', 'Your account is ready. Please sign in.', [
+            { text: 'Sign In', onPress: () => navigation.replace('Login') }
+          ]);
+        }
       } else {
         Alert.alert('Registration failed', data.message || 'Please try again');
       }
