@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { registerForPushNotifications, setupNotificationListeners } from './src/utils/notifications';
 import * as ExpoSplashScreen from 'expo-splash-screen';
 
 ExpoSplashScreen.preventAutoHideAsync();
@@ -77,6 +78,12 @@ export default function App() {
       const role = await AsyncStorage.getItem('glm_role');
       setIsAdmin(ADMIN_ROLES.includes(role));
       setAppState('splash');
+      // Register for push notifications
+      registerForPushNotifications();
+      // Listen for notifications
+      setupNotificationListeners((notification, data) => {
+        console.log('Notification received:', notification);
+      });
     })();
   }, []);
 

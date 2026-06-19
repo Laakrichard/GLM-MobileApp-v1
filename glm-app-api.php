@@ -457,6 +457,13 @@ function glm_api_get_user_from_request( WP_REST_Request $request ) {
 // ── STAMPS endpoints (added for GLM MobileApp v1) ────────────────────────────
 add_action('rest_api_init', function() {
 
+    // POST /wp-json/glm/v1/push-token — save device push token
+    register_rest_route('glm/v1', '/push-token', [
+        'methods'             => 'POST',
+        'callback'            => 'glm_save_push_token',
+        'permission_callback' => '__return_true',
+    ]);
+
     // GET /wp-json/glm/v1/me — get current user info including role
     register_rest_route('glm/v1', '/me', [
         'methods'             => 'GET',
@@ -534,6 +541,44 @@ add_action('rest_api_init', function() {
         'permission_callback' => 'glm_is_admin',
     ]);
 });
+
+function glm_save_push_token(WP_REST_Request $req) {
+    $user  = wp_get_current_user();
+    $token = sanitize_text_field($req->get_param('push_token'));
+    if (!$token) return new WP_Error('missing', 'Token required', ['status' => 400]);
+    // Save token against user or as a transient keyed by token
+    if ($user && $user->ID) {
+        update_user_meta($user->ID, '_glm_push_token', $token);
+    }
+    // Also store all tokens in a global option for admin sending
+    $tokens = get_option('glm_push_tokens', []);
+    $tokens[$token] = ['user_id' => $user->ID ?? 0, 'updated' => time()];
+    update_option('glm_push_tokens', $tokens);
+    return rest_ensure_response(['success' => true]);
+}
+
+function glm_send_push_notification($push_token, $title, $body, $data = []) {
+    if (!$push_token) return false;
+    $payload = [
+        'to'    => $push_token,
+        'title' => $title,
+        'body'  => $body,
+        'data'  => $data,
+        'sound' => 'default',
+        'badge' => 1,
+    ];
+    $response = wp_remote_post('https://exp.host/--/api/v2/push/send', [
+        'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+        'body'    => json_encode($payload),
+        'timeout' => 10,
+    ]);
+    return !is_wp_error($response);
+}
+
+function glm_send_push_to_user($user_id, $title, $body, $data = []) {
+    $token = get_user_meta($user_id, '_glm_push_token', true);
+    if ($token) glm_send_push_notification($token, $title, $body, $data);
+}
 
 function glm_get_me() {
     $user = wp_get_current_user();
@@ -784,6 +829,18 @@ function glm_admin_notify_customer(WP_REST_Request $req) {
 
     $headers = ['Content-Type: text/html; charset=UTF-8', 'From: Golf Life Metals <orders@golflifemetals.com>'];
     $sent = wp_mail($customer_email, $subject, $message, $headers);
+
+    // Also send push notification to customer's device
+    $customer_id = $order->get_customer_id();
+    if ($customer_id) {
+        if ($is_completed) {
+            glm_send_push_to_user($customer_id, '✅ Order Complete!', 'Your GLM marker order #' . $order_id . ' is complete. Thank you!', ['order_id' => $order_id]);
+        } elseif ($is_shipped) {
+            glm_send_push_to_user($customer_id, '📦 Your Marker Shipped!', 'Your GLM marker is on its way. Tracking: ' . $tracking, ['order_id' => $order_id, 'tracking' => $tracking]);
+        } else {
+            glm_send_push_to_user($customer_id, '🎉 Your Marker is Ready!', 'Jon has completed your custom copper marker. Check it out!', ['order_id' => $order_id]);
+        }
+    }
 
     return rest_ensure_response(['success' => $sent, 'message' => $sent ? 'Customer notified.' : 'Email failed.']);
 }

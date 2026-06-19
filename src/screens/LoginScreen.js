@@ -4,6 +4,7 @@ import {
   StyleSheet, Image, ScrollView, ActivityIndicator, Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { registerForPushNotifications } from '../utils/notifications';
 import { GLM_COLORS, API_BASE } from '../constants';
 
 export default function LoginScreen({ navigation }) {
@@ -35,6 +36,8 @@ export default function LoginScreen({ navigation }) {
         } catch(e) {
           await AsyncStorage.setItem('glm_role', 'customer');
         }
+        // Register push token after successful login
+        registerForPushNotifications();
         navigation.replace('Main');
       } else {
         Alert.alert('Sign in failed', data.message || 'Invalid credentials');
