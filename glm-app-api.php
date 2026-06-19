@@ -513,6 +513,13 @@ add_action('rest_api_init', function() {
         'permission_callback' => 'glm_is_admin',
     ]);
 
+    // DELETE /wp-json/glm/v1/admin/orders/(?P<id>\d+)/finished-marker
+    register_rest_route('glm/v1', '/admin/orders/(?P<id>\d+)/finished-marker', [
+        'methods'             => 'DELETE',
+        'callback'            => 'glm_admin_remove_finished_marker',
+        'permission_callback' => 'glm_is_admin',
+    ]);
+
     // POST /wp-json/glm/v1/admin/orders/(?P<id>\d+)/tracking
     register_rest_route('glm/v1', '/admin/orders/(?P<id>\d+)/tracking', [
         'methods'             => 'POST',
@@ -621,6 +628,15 @@ function glm_admin_update_status(WP_REST_Request $req) {
     if (!$order) return new WP_Error('not_found', 'Order not found', ['status' => 404]);
     $order->update_status(sanitize_text_field($req->get_param('status')));
     return rest_ensure_response(['success' => true]);
+}
+
+function glm_admin_remove_finished_marker(WP_REST_Request $req) {
+    $order = wc_get_order(intval($req->get_param('id')));
+    if (!$order) return new WP_Error('not_found', 'Order not found', ['status' => 404]);
+    $side = sanitize_text_field($req->get_param('side') ?: 'front');
+    $order->delete_meta_data('_glm_finished_' . $side);
+    $order->save();
+    return rest_ensure_response(['success' => true, 'side' => $side]);
 }
 
 function glm_admin_upload_finished_marker(WP_REST_Request $req) {

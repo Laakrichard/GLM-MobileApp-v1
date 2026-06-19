@@ -4,11 +4,17 @@ import {
   Image, Alert, ActivityIndicator, ScrollView, TextInput, Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS } from '../constants';
+import { COLORS, API_BASE } from '../constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getAllOrders, updateOrderStatus,
   uploadFinishedMarker, updateTrackingNumber,
 } from '../utils/api';
+
+async function getAuthHeaders() {
+  const token = await AsyncStorage.getItem('glm_token');
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+}
 
 const STATUS_COLORS = {
   pending:    '#F59E0B',
@@ -79,6 +85,30 @@ export default function AdminScreen() {
     } finally {
       setUploading(null);
     }
+  }
+
+  async function handleRemoveMarker(orderId, side) {
+    Alert.alert(
+      'Remove Photo?',
+      `Remove the ${side} photo from this order?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: async () => {
+          try {
+            const headers = await getAuthHeaders();
+            await fetch(`${API_BASE}/wp-json/glm/v1/admin/orders/${orderId}/finished-marker`, {
+              method: 'DELETE',
+              headers,
+              body: JSON.stringify({ side }),
+            });
+            setSelected(prev => ({ ...prev, [`finished_${side}`]: null }));
+            Alert.alert('✓ Removed', `${side} photo removed.`);
+          } catch (e) {
+            Alert.alert('Error', 'Could not remove photo.');
+          }
+        }},
+      ]
+    );
   }
 
   async function handleUpdateTracking(orderId) {
@@ -220,45 +250,85 @@ export default function AdminScreen() {
                 Upload front and back photos — customer notified instantly via email.
               </Text>
 
-              {/* Show existing finished photos if any */}
-              {(selected.finished_front || selected.finished_back) && (
-                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                  {selected.finished_front && (
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: COLORS.textMuted, fontSize: 10, marginBottom: 4 }}>FRONT — UPLOADED</Text>
-                      <Image source={{ uri: selected.finished_front }} style={{ width: '100%', height: 100, borderRadius: 8 }} resizeMode="contain" />
+              {/* Finished marker photos — show uploaded + allow remove/replace */}
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                {/* FRONT */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: COLORS.textMuted, fontSize: 10, marginBottom: 6, fontWeight: '700' }}>FRONT PHOTO</Text>
+                  {selected.finished_front ? (
+                    <View>
+                      <Image source={{ uri: selected.finished_front }} style={{ width: '100%', height: 110, borderRadius: 8, marginBottom: 6 }} resizeMode="contain" />
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        <TouchableOpacity
+                          style={{ flex: 1, backgroundColor: COLORS.green, borderRadius: 8, padding: 8, alignItems: 'center' }}
+                          onPress={() => handleUploadMarker(selected.id, 'front')}
+                          disabled={uploading}
+                        >
+                          {uploading === 'front'
+                            ? <ActivityIndicator size="small" color={COLORS.copper} />
+                            : <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>↺ Replace</Text>
+                          }
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{ flex: 1, backgroundColor: 'rgba(224,82,82,0.15)', borderRadius: 8, padding: 8, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(224,82,82,0.4)' }}
+                          onPress={() => handleRemoveMarker(selected.id, 'front')}
+                        >
+                          <Text style={{ color: COLORS.error, fontSize: 11, fontWeight: '700' }}>✕ Remove</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  )}
-                  {selected.finished_back && (
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: COLORS.textMuted, fontSize: 10, marginBottom: 4 }}>BACK — UPLOADED</Text>
-                      <Image source={{ uri: selected.finished_back }} style={{ width: '100%', height: 100, borderRadius: 8 }} resizeMode="contain" />
-                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[S.actionBtn, { backgroundColor: COLORS.green }]}
+                      onPress={() => handleUploadMarker(selected.id, 'front')}
+                      disabled={uploading}
+                    >
+                      {uploading === 'front'
+                        ? <ActivityIndicator color={COLORS.copper} />
+                        : <Text style={[S.actionBtnText, { fontSize: 12 }]}>📷 Upload Front</Text>
+                      }
+                    </TouchableOpacity>
                   )}
                 </View>
-              )}
 
-              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-                <TouchableOpacity
-                  style={[S.actionBtn, { backgroundColor: COLORS.green, flex: 1 }]}
-                  onPress={() => handleUploadMarker(selected.id, 'front')}
-                  disabled={uploading}
-                >
-                  {uploading === 'front'
-                    ? <ActivityIndicator color={COLORS.copper} />
-                    : <Text style={[S.actionBtnText, { fontSize: 12 }]}>📷 Front Photo</Text>
-                  }
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[S.actionBtn, { backgroundColor: COLORS.green, flex: 1 }]}
-                  onPress={() => handleUploadMarker(selected.id, 'back')}
-                  disabled={uploading}
-                >
-                  {uploading === 'back'
-                    ? <ActivityIndicator color={COLORS.copper} />
-                    : <Text style={[S.actionBtnText, { fontSize: 12 }]}>📷 Back Photo</Text>
-                  }
-                </TouchableOpacity>
+                {/* BACK */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: COLORS.textMuted, fontSize: 10, marginBottom: 6, fontWeight: '700' }}>BACK PHOTO</Text>
+                  {selected.finished_back ? (
+                    <View>
+                      <Image source={{ uri: selected.finished_back }} style={{ width: '100%', height: 110, borderRadius: 8, marginBottom: 6 }} resizeMode="contain" />
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        <TouchableOpacity
+                          style={{ flex: 1, backgroundColor: COLORS.green, borderRadius: 8, padding: 8, alignItems: 'center' }}
+                          onPress={() => handleUploadMarker(selected.id, 'back')}
+                          disabled={uploading}
+                        >
+                          {uploading === 'back'
+                            ? <ActivityIndicator size="small" color={COLORS.copper} />
+                            : <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>↺ Replace</Text>
+                          }
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{ flex: 1, backgroundColor: 'rgba(224,82,82,0.15)', borderRadius: 8, padding: 8, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(224,82,82,0.4)' }}
+                          onPress={() => handleRemoveMarker(selected.id, 'back')}
+                        >
+                          <Text style={{ color: COLORS.error, fontSize: 11, fontWeight: '700' }}>✕ Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[S.actionBtn, { backgroundColor: COLORS.green }]}
+                      onPress={() => handleUploadMarker(selected.id, 'back')}
+                      disabled={uploading}
+                    >
+                      {uploading === 'back'
+                        ? <ActivityIndicator color={COLORS.copper} />
+                        : <Text style={[S.actionBtnText, { fontSize: 12 }]}>📷 Upload Back</Text>
+                      }
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
 
               {/* Tracking number */}
