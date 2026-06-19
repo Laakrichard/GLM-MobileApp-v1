@@ -17,6 +17,7 @@
     "expo-file-system": "~17.0.1",
     "expo-image-picker": "~15.0.7",
     "expo-media-library": "~16.0.5",
+    "expo-notifications": "~0.28.18",
     "expo-splash-screen": "~0.27.5",
     "expo-status-bar": "~1.12.1",
     "expo-web-browser": "~13.0.3",
