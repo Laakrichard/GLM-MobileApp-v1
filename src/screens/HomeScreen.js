@@ -55,15 +55,23 @@ export default function HomeScreen({ navigation }) {
       {/* Hero */}
       {isAdmin && (
         <TouchableOpacity
-          style={S.adminBanner}
+          style={{
+            backgroundColor: '#B87333',
+            borderRadius: 14,
+            padding: 16,
+            marginBottom: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
           onPress={() => navigation.navigate('Admin')}
           activeOpacity={0.85}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={S.adminBannerTitle}>⚙️  Admin Dashboard</Text>
-            <Text style={S.adminBannerSub}>Manage orders · Upload markers · Update tracking</Text>
+          <View>
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>⚙️  Admin Dashboard</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 3 }}>Manage orders · Upload markers · Tracking</Text>
           </View>
-          <Text style={S.adminBannerArrow}>→</Text>
+          <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800' }}>→</Text>
         </TouchableOpacity>
       )}
 

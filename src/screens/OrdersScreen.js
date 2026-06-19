@@ -62,8 +62,11 @@ export default function OrdersScreen({ navigation }) {
   return (
     <View style={S.container}>
       <View style={S.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={S.backBtn}>
-          <Text style={S.backBtnText}>← Back</Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ backgroundColor: '#B87333', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, alignSelf: 'flex-start', marginBottom: 12 }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>← Back</Text>
         </TouchableOpacity>
         <Text style={S.title}>Orders</Text>
         <Text style={S.sub}>{orders.length} total</Text>
