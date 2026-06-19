@@ -1,10 +1,8 @@
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE } from '../constants';
 
-// Configure how notifications appear when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -13,46 +11,40 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Register for push notifications and save token to server
 export async function registerForPushNotifications() {
-  if (!Device.isDevice) return null; // won't work on simulator
-
-  // Check/request permissions
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') return null;
-
-  // Android channel
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('glm-orders', {
-      name: 'Order Updates',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#B87333',
-    });
-  }
-
-  // Get Expo push token
   try {
-    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') return null;
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('glm-orders', {
+        name: 'Order Updates',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#B87333',
+      });
+    }
+
+    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const token = tokenData?.data;
     if (token) {
       await savePushToken(token);
       await AsyncStorage.setItem('glm_push_token', token);
     }
     return token;
   } catch (e) {
-    console.log('Push token error:', e);
+    console.log('Push registration error:', e);
     return null;
   }
 }
 
-// Save push token to WordPress via API
 async function savePushToken(pushToken) {
   try {
     const authToken = await AsyncStorage.getItem('glm_token');
@@ -70,21 +62,13 @@ async function savePushToken(pushToken) {
   }
 }
 
-// Set up notification listeners
 export function setupNotificationListeners(onNotification) {
-  // Received while app is open
   const sub1 = Notifications.addNotificationReceivedListener(notification => {
     if (onNotification) onNotification(notification);
   });
-
-  // Tapped by user
   const sub2 = Notifications.addNotificationResponseReceivedListener(response => {
     const data = response.notification.request.content.data;
     if (onNotification) onNotification(response.notification, data);
   });
-
-  return () => {
-    sub1.remove();
-    sub2.remove();
-  };
+  return () => { sub1.remove(); sub2.remove(); };
 }
