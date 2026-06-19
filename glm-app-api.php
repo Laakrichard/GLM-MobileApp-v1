@@ -114,12 +114,20 @@ function glm_api_get_my_orders( WP_REST_Request $request ) {
             if ( $thumb ) { $image = $thumb; break; }
         }
         $out[] = [
-            'id'     => $order->get_id(),
-            'name'   => 'Custom Copper Marker — GLM',
-            'status' => $order->get_status(),
-            'total'  => number_format( (float) $order->get_total(), 2 ),
-            'date'   => $order->get_date_created() ? $order->get_date_created()->date( 'M j, Y' ) : '',
-            'image'  => $image,
+            'id'              => $order->get_id(),
+            'name'            => 'Custom Copper Marker — GLM',
+            'status'          => $order->get_status(),
+            'total'           => number_format( (float) $order->get_total(), 2 ),
+            'date'            => $order->get_date_created() ? $order->get_date_created()->date( 'M j, Y' ) : '',
+            'image'           => $order->get_meta('_glm_design_image') ?: $image,
+            'design_image_b'  => $order->get_meta('_glm_design_image_b'),
+            'finish'          => $order->get_meta('_glm_finish'),
+            'sides'           => $order->get_meta('_glm_sides'),
+            'color_choice'    => $order->get_meta('_glm_color_choice'),
+            'tracking_number' => $order->get_meta('_glm_tracking'),
+            'carrier'         => $order->get_meta('_glm_carrier'),
+            'finished_front'  => $order->get_meta('_glm_finished_front'),
+            'finished_back'   => $order->get_meta('_glm_finished_back'),
         ];
     }
     return rest_ensure_response( $out );

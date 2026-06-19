@@ -21,7 +21,7 @@ export default function ProfileScreen({ navigation }) {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: async () => {
-        await AsyncStorage.multiRemove(['glm_token', 'glm_username', 'glm_email', 'glm_onboarded']);
+        await AsyncStorage.multiRemove(['glm_token', 'glm_username', 'glm_email', 'glm_onboarded', 'glm_role', 'glm_push_token']);
         navigation.replace('Login');
       }},
     ]);
@@ -33,7 +33,7 @@ export default function ProfileScreen({ navigation }) {
     {
       label: 'Account',
       items: [
-        { label: 'My Orders',      sub: 'View & track',       action: () => navigation.navigate('Profile') },
+        { label: 'My Orders',      sub: 'View & track your designs', action: () => navigation.navigate('Orders') },
         { label: 'Design a Marker', sub: 'Open the designer', action: () => navigation.navigate('Design') },
         { label: 'Browse Markers', sub: 'All 47 designs',     action: () => navigation.navigate('Markers') },
       ]
