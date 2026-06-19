@@ -526,6 +526,13 @@ add_action('rest_api_init', function() {
         'callback'            => 'glm_admin_update_tracking',
         'permission_callback' => 'glm_is_admin',
     ]);
+
+    // POST /wp-json/glm/v1/admin/orders/(?P<id>\d+)/notify-customer
+    register_rest_route('glm/v1', '/admin/orders/(?P<id>\d+)/notify-customer', [
+        'methods'             => 'POST',
+        'callback'            => 'glm_admin_notify_customer',
+        'permission_callback' => 'glm_is_admin',
+    ]);
 });
 
 function glm_get_me() {
@@ -650,27 +657,7 @@ function glm_admin_upload_finished_marker(WP_REST_Request $req) {
         // Save to order meta — matches WooCommerce backend fields
         $order->update_meta_data('_glm_finished_' . $side, $upload['url']);
         $order->save();
-        // Only email customer when front photo is uploaded (or both are done)
-        $front_url = $order->get_meta('_glm_finished_front');
-        $back_url  = $order->get_meta('_glm_finished_back');
-        $customer_email = $order->get_billing_email();
-        $customer_name  = $order->get_billing_first_name();
-        if ($side === 'front' || ($front_url && $back_url)) {
-            $subject = 'Your GLM Marker is Ready!';
-            $message = "Hi {$customer_name},
-
-Great news! Your custom Golf Life Metals marker is complete.
-
-";
-            if ($front_url) $message .= "Front: {$front_url}
-";
-            if ($back_url)  $message .= "Back: {$back_url}
-";
-            $message .= "
-Thank you for your order!
-Golf Life Metals";
-            wp_mail($customer_email, $subject, $message);
-        }
+        // No auto-email on upload — admin uses Update Order button to notify customer
     }
     return rest_ensure_response(['success' => true, 'url' => $upload['url'] ?? '', 'side' => $side]);
 }
@@ -683,11 +670,107 @@ function glm_admin_update_tracking(WP_REST_Request $req) {
     $order->update_meta_data('_glm_tracking', $tracking);
     $order->update_meta_data('_glm_carrier',  $carrier);
     $order->save();
-    // Email customer
-    $customer_email = $order->get_billing_email();
-    wp_mail($customer_email, 'Your GLM Marker Has Shipped!',
-        "Your order has shipped via {$carrier}. Tracking number: {$tracking}");
+    // No auto-email — admin clicks Update Order to send notification
     return rest_ensure_response(['success' => true]);
+}
+
+function glm_admin_notify_customer(WP_REST_Request $req) {
+    $order = wc_get_order(intval($req->get_param('id')));
+    if (!$order) return new WP_Error('not_found', 'Order not found', ['status' => 404]);
+
+    $customer_email = $order->get_billing_email();
+    $customer_name  = $order->get_billing_first_name() ?: $order->get_billing_last_name();
+    $order_id       = $order->get_id();
+    $finish         = $order->get_meta('_glm_finish') ?: 'Custom Copper';
+    $front_url      = $order->get_meta('_glm_finished_front');
+    $back_url       = $order->get_meta('_glm_finished_back');
+    $tracking       = $order->get_meta('_glm_tracking');
+    $carrier        = $order->get_meta('_glm_carrier');
+
+    // Has marker photos
+    $has_photos = $front_url || $back_url;
+
+    // Build HTML email
+    $subject = $has_photos ? "Your GLM Marker is Ready! 🎉 — Order #{$order_id}" : "Order #{$order_id} Update — Golf Life Metals";
+
+    $front_img = $front_url ? "<img src='{$front_url}' style='width:280px;height:280px;object-fit:contain;border-radius:12px;margin:8px;' alt='Front of your marker' />" : '';
+    $back_img  = $back_url  ? "<img src='{$back_url}'  style='width:280px;height:280px;object-fit:contain;border-radius:12px;margin:8px;' alt='Back of your marker' />"  : '';
+
+    $photos_section = $has_photos ? "
+        <div style='text-align:center;margin:24px 0;'>
+            <p style='font-size:14px;color:#888;margin-bottom:12px;'>HERE IS YOUR FINISHED MARKER</p>
+            <div style='display:inline-block;'>
+                {$front_img}{$back_img}
+            </div>
+        </div>
+    " : '';
+
+    $tracking_section = $tracking ? "
+        <div style='background:#f5f0eb;border-radius:10px;padding:16px;margin:20px 0;'>
+            <p style='margin:0 0 6px;font-size:12px;color:#888;font-weight:700;letter-spacing:1px;'>TRACKING INFORMATION</p>
+            <p style='margin:0;font-size:15px;color:#111;font-weight:700;'>{$carrier}: {$tracking}</p>
+        </div>
+    " : "
+        <p style='color:#888;font-size:14px;'>We will send you your tracking number as soon as your order ships.</p>
+    ";
+
+    $message = "
+    <!DOCTYPE html>
+    <html>
+    <body style='margin:0;padding:0;background:#f0ede8;font-family:Georgia,serif;'>
+        <div style='max-width:600px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;'>
+
+            <!-- Header -->
+            <div style='background:#111;padding:32px;text-align:center;'>
+                <p style='color:#B87333;font-size:11px;letter-spacing:3px;margin:0 0 8px;'>GOLF LIFE METALS</p>
+                <h1 style='color:#fff;font-size:28px;margin:0;font-weight:400;'>Your marker is ready.</h1>
+            </div>
+
+            <!-- Body -->
+            <div style='padding:32px;'>
+                <p style='font-size:16px;color:#333;line-height:1.7;'>Hi {$customer_name},</p>
+
+                <p style='font-size:15px;color:#333;line-height:1.8;'>
+                    I'm so excited to share this with you — your custom copper marker has been completed, 
+                    and I have to say, it turned out absolutely beautiful.
+                </p>
+
+                <p style='font-size:15px;color:#333;line-height:1.8;'>
+                    Every marker I make is truly one of a kind, and yours is no exception. 
+                    I hope it brings you as much joy on the course as it brought me crafting it for you.
+                </p>
+
+                {$photos_section}
+
+                <div style='border-top:1px solid #eee;padding-top:20px;margin-top:20px;'>
+                    <p style='font-size:13px;color:#888;letter-spacing:1px;font-weight:700;margin-bottom:8px;'>ORDER #{$order_id} — {$finish}</p>
+                    {$tracking_section}
+                </div>
+
+                <p style='font-size:15px;color:#333;line-height:1.8;margin-top:24px;'>
+                    Thank you so much for trusting me with your design. 
+                    It means the world to me and to Golf Life Metals.
+                </p>
+
+                <p style='font-size:15px;color:#333;'>
+                    With gratitude,<br>
+                    <strong>Jon</strong><br>
+                    <span style='color:#888;font-size:13px;'>Golf Life Metals</span>
+                </p>
+            </div>
+
+            <!-- Footer -->
+            <div style='background:#111;padding:20px;text-align:center;'>
+                <p style='color:#555;font-size:11px;margin:0;'>glmgolf.com &nbsp;·&nbsp; Custom Copper Golf Markers</p>
+            </div>
+        </div>
+    </body>
+    </html>";
+
+    $headers = ['Content-Type: text/html; charset=UTF-8', 'From: Golf Life Metals <orders@golflifemetals.com>'];
+    $sent = wp_mail($customer_email, $subject, $message, $headers);
+
+    return rest_ensure_response(['success' => $sent, 'message' => $sent ? 'Customer notified.' : 'Email failed.']);
 }
 
 function glm_save_base64_image($base64, $filename) {

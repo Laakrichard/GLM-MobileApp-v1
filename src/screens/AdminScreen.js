@@ -32,6 +32,7 @@ export default function AdminScreen() {
   const [selected, setSelected] = useState(null); // selected order for detail view
   const [tracking, setTracking] = useState('');
   const [carrier,  setCarrier]  = useState('');
+  const [sending,  setSending]  = useState(false);
   const [uploading, setUploading] = useState(null); // 'front' | 'back' | null
 
   const loadOrders = useCallback(async () => {
@@ -112,22 +113,48 @@ export default function AdminScreen() {
   }
 
   async function handleUpdateTracking(orderId) {
-    if (!tracking) { Alert.alert('Required', 'Please enter a tracking number.'); return; }
+    // Now handled by handleUpdateOrder
+  }
+
+  async function handleUpdateOrder(orderId) {
+    setSending(true);
     try {
-      await updateTrackingNumber(orderId, tracking, carrier);
-      Alert.alert('✓ Updated', 'Tracking number sent to customer.');
-      setTracking('');
-      setCarrier('');
-      loadOrders();
+      const headers = await getAuthHeaders();
+      // Save tracking if provided
+      if (tracking) {
+        await updateTrackingNumber(orderId, tracking, carrier);
+      }
+      // Send the update email with photos + tracking
+      const res = await fetch(`${API_BASE}/wp-json/glm/v1/admin/orders/${orderId}/notify-customer`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tracking_number: tracking,
+          carrier: carrier,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('✓ Order Updated', 'Customer has been notified with their marker photos and order details.');
+        loadOrders();
+      } else {
+        Alert.alert('Error', data.message || 'Could not notify customer.');
+      }
     } catch (e) {
-      Alert.alert('Error', 'Could not update tracking.');
+      Alert.alert('Error', 'Could not update order.');
+    } finally {
+      setSending(false);
     }
   }
 
   function renderOrderCard({ item }) {
     const statusColor = STATUS_COLORS[item.status] || COLORS.textMuted;
     return (
-      <TouchableOpacity style={S.card} onPress={() => setSelected(item)}>
+      <TouchableOpacity style={S.card} onPress={() => {
+          setSelected(item);
+          setTracking(item.tracking_number || '');
+          setCarrier(item.carrier || '');
+        }}>
         <View style={S.cardRow}>
           {item.design_image ? (
             <Image source={{ uri: item.design_image }} style={S.thumb} resizeMode="contain" />
@@ -347,12 +374,21 @@ export default function AdminScreen() {
                 value={tracking}
                 onChangeText={setTracking}
               />
+
+              {/* UPDATE ORDER — saves everything and sends one email */}
               <TouchableOpacity
-                style={[S.actionBtn, { backgroundColor: COLORS.copper }]}
-                onPress={() => handleUpdateTracking(selected.id)}
+                style={[S.actionBtn, { backgroundColor: COLORS.copper, marginTop: 16 }]}
+                onPress={() => handleUpdateOrder(selected.id)}
+                disabled={sending}
               >
-                <Text style={[S.actionBtnText, { color: '#fff' }]}>📦  Send Tracking to Customer</Text>
+                {sending
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={[S.actionBtnText, { color: '#fff', fontSize: 16 }]}>✓  Update Order & Notify Customer</Text>
+                }
               </TouchableOpacity>
+              <Text style={{ color: COLORS.textMuted, fontSize: 11, textAlign: 'center', marginTop: 8 }}>
+                Saves tracking + sends customer email with marker photos
+              </Text>
             </ScrollView>
           </View>
         )}
