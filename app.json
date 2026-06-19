@@ -16,7 +16,8 @@
       "bundleIdentifier": "com.golflifemetals.glmdesigner",
       "infoPlist": {
         "NSUserNotificationUsageDescription": "GLM will notify you when your order status changes."
-      }
+      },
+      "deploymentTarget": "15.1"
     },
     "android": {
       "adaptiveIcon": {
