@@ -59,10 +59,9 @@ export default function HomeScreen({ navigation }) {
           onPress={() => navigation.navigate('Admin')}
           activeOpacity={0.85}
         >
-          <Text style={S.adminBannerIcon}>⚙️</Text>
           <View style={{ flex: 1 }}>
-            <Text style={S.adminBannerTitle}>Admin Dashboard</Text>
-            <Text style={S.adminBannerSub}>Orders · Markers · Tracking</Text>
+            <Text style={S.adminBannerTitle}>⚙️  Admin Dashboard</Text>
+            <Text style={S.adminBannerSub}>Manage orders · Upload markers · Update tracking</Text>
           </View>
           <Text style={S.adminBannerArrow}>→</Text>
         </TouchableOpacity>

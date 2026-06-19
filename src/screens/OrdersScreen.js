@@ -13,7 +13,7 @@ const STATUS = {
   cancelled:  { color: '#E05252', label: 'Cancelled' },
 };
 
-export default function OrdersScreen() {
+export default function OrdersScreen({ navigation }) {
   const [orders,  setOrders]  = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -62,6 +62,9 @@ export default function OrdersScreen() {
   return (
     <View style={S.container}>
       <View style={S.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={S.backBtn}>
+          <Text style={S.backBtnText}>← Back</Text>
+        </TouchableOpacity>
         <Text style={S.title}>Orders</Text>
         <Text style={S.sub}>{orders.length} total</Text>
       </View>
