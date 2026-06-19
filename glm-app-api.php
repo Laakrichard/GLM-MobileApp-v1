@@ -607,6 +607,9 @@ function glm_admin_get_orders() {
             'design_image'    => $order->get_meta('_glm_design_image'),
             'design_image_b'  => $order->get_meta('_glm_design_image_b'),
             'tracking_number' => $order->get_meta('_glm_tracking'),
+            'carrier'         => $order->get_meta('_glm_carrier'),
+            'finished_front'  => $order->get_meta('_glm_finished_front'),
+            'finished_back'   => $order->get_meta('_glm_finished_back'),
             'finished_marker' => $order->get_meta('_glm_finished_marker'),
         ];
     }
@@ -624,17 +627,36 @@ function glm_admin_upload_finished_marker(WP_REST_Request $req) {
     $order = wc_get_order(intval($req->get_param('id')));
     if (!$order) return new WP_Error('not_found', 'Order not found', ['status' => 404]);
     $image_data = $req->get_param('image');
-    // Save base64 image and get URL
-    $upload = glm_save_base64_image($image_data, 'finished-marker-' . $order->get_id());
+    $side       = sanitize_text_field($req->get_param('side') ?: 'front'); // 'front' or 'back'
+    $filename   = 'glm-finished-' . $order->get_id() . '-' . $side;
+    $upload     = glm_save_base64_image($image_data, $filename);
     if ($upload) {
-        $order->update_meta_data('_glm_finished_marker', $upload['url']);
+        // Save to order meta — matches WooCommerce backend fields
+        $order->update_meta_data('_glm_finished_' . $side, $upload['url']);
         $order->save();
-        // Send email to customer
+        // Only email customer when front photo is uploaded (or both are done)
+        $front_url = $order->get_meta('_glm_finished_front');
+        $back_url  = $order->get_meta('_glm_finished_back');
         $customer_email = $order->get_billing_email();
-        wp_mail($customer_email, 'Your GLM Marker is Ready!', 
-            'Great news! Your custom Golf Life Metals marker is complete. View it here: ' . $upload['url']);
+        $customer_name  = $order->get_billing_first_name();
+        if ($side === 'front' || ($front_url && $back_url)) {
+            $subject = 'Your GLM Marker is Ready!';
+            $message = "Hi {$customer_name},
+
+Great news! Your custom Golf Life Metals marker is complete.
+
+";
+            if ($front_url) $message .= "Front: {$front_url}
+";
+            if ($back_url)  $message .= "Back: {$back_url}
+";
+            $message .= "
+Thank you for your order!
+Golf Life Metals";
+            wp_mail($customer_email, $subject, $message);
+        }
     }
-    return rest_ensure_response(['success' => true, 'url' => $upload['url'] ?? '']);
+    return rest_ensure_response(['success' => true, 'url' => $upload['url'] ?? '', 'side' => $side]);
 }
 
 function glm_admin_update_tracking(WP_REST_Request $req) {

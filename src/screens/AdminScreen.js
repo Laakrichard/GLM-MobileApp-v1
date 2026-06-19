@@ -26,7 +26,7 @@ export default function AdminScreen() {
   const [selected, setSelected] = useState(null); // selected order for detail view
   const [tracking, setTracking] = useState('');
   const [carrier,  setCarrier]  = useState('');
-  const [uploading, setUploading] = useState(false);
+  const [uploading, setUploading] = useState(null); // 'front' | 'back' | null
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -53,7 +53,7 @@ export default function AdminScreen() {
     }
   }
 
-  async function handleUploadMarker(orderId) {
+  async function handleUploadMarker(orderId, side) {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Please allow photo library access.');
@@ -65,16 +65,19 @@ export default function AdminScreen() {
       base64: true,
     });
     if (result.canceled) return;
-    setUploading(true);
+    setUploading(side);
     try {
       const base64 = result.assets[0].base64;
-      await uploadFinishedMarker(orderId, base64);
-      Alert.alert('✓ Sent!', 'Finished marker photo sent to customer via push notification and email.');
+      await uploadFinishedMarker(orderId, base64, side);
+      Alert.alert('✓ Sent!', `Finished marker ${side} photo sent to customer via email.`);
+      // Update selected order locally
+      const url = result.assets[0].uri;
+      setSelected(prev => ({ ...prev, [`finished_${side}`]: url }));
       loadOrders();
     } catch (e) {
       Alert.alert('Error', 'Could not upload marker photo.');
     } finally {
-      setUploading(false);
+      setUploading(null);
     }
   }
 
@@ -151,22 +154,28 @@ export default function AdminScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 20 }}>
-              {/* Design images */}
+              {/* Customer design images */}
               <Text style={S.sectionLabel}>CUSTOMER DESIGN</Text>
-              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
-                {selected.design_image && (
-                  <View style={{ flex: 1 }}>
-                    <Text style={S.sideLbl}>SIDE A</Text>
-                    <Image source={{ uri: selected.design_image }} style={S.designImg} resizeMode="contain" />
-                  </View>
-                )}
-                {selected.design_image_b && (
-                  <View style={{ flex: 1 }}>
-                    <Text style={S.sideLbl}>SIDE B</Text>
-                    <Image source={{ uri: selected.design_image_b }} style={S.designImg} resizeMode="contain" />
-                  </View>
-                )}
-              </View>
+              {(selected.design_image || selected.design_image_b) ? (
+                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
+                  {selected.design_image && (
+                    <View style={{ flex: 1 }}>
+                      <Text style={S.sideLbl}>SIDE A</Text>
+                      <Image source={{ uri: selected.design_image }} style={S.designImg} resizeMode="contain" />
+                    </View>
+                  )}
+                  {selected.design_image_b && (
+                    <View style={{ flex: 1 }}>
+                      <Text style={S.sideLbl}>SIDE B</Text>
+                      <Image source={{ uri: selected.design_image_b }} style={S.designImg} resizeMode="contain" />
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <Text style={{ color: COLORS.textMuted, fontSize: 12, marginBottom: 20 }}>
+                  No design images saved for this order.
+                </Text>
+              )}
 
               {/* Order details */}
               <Text style={S.sectionLabel}>ORDER DETAILS</Text>
@@ -205,21 +214,52 @@ export default function AdminScreen() {
                 ))}
               </View>
 
-              {/* Upload finished marker */}
-              <Text style={S.sectionLabel}>FINISHED MARKER PHOTO</Text>
+              {/* Upload finished marker — Front + Back */}
+              <Text style={S.sectionLabel}>FINISHED MARKER PHOTOS</Text>
               <Text style={{ color: COLORS.textMuted, fontSize: 12, marginBottom: 12 }}>
-                Upload the photo of the completed marker — customer gets notified instantly via push + email.
+                Upload front and back photos — customer notified instantly via email.
               </Text>
-              <TouchableOpacity
-                style={[S.actionBtn, { backgroundColor: COLORS.green }]}
-                onPress={() => handleUploadMarker(selected.id)}
-                disabled={uploading}
-              >
-                {uploading
-                  ? <ActivityIndicator color={COLORS.copper} />
-                  : <Text style={S.actionBtnText}>📷  Upload Finished Marker</Text>
-                }
-              </TouchableOpacity>
+
+              {/* Show existing finished photos if any */}
+              {(selected.finished_front || selected.finished_back) && (
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                  {selected.finished_front && (
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: COLORS.textMuted, fontSize: 10, marginBottom: 4 }}>FRONT — UPLOADED</Text>
+                      <Image source={{ uri: selected.finished_front }} style={{ width: '100%', height: 100, borderRadius: 8 }} resizeMode="contain" />
+                    </View>
+                  )}
+                  {selected.finished_back && (
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: COLORS.textMuted, fontSize: 10, marginBottom: 4 }}>BACK — UPLOADED</Text>
+                      <Image source={{ uri: selected.finished_back }} style={{ width: '100%', height: 100, borderRadius: 8 }} resizeMode="contain" />
+                    </View>
+                  )}
+                </View>
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[S.actionBtn, { backgroundColor: COLORS.green, flex: 1 }]}
+                  onPress={() => handleUploadMarker(selected.id, 'front')}
+                  disabled={uploading}
+                >
+                  {uploading === 'front'
+                    ? <ActivityIndicator color={COLORS.copper} />
+                    : <Text style={[S.actionBtnText, { fontSize: 12 }]}>📷 Front Photo</Text>
+                  }
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[S.actionBtn, { backgroundColor: COLORS.green, flex: 1 }]}
+                  onPress={() => handleUploadMarker(selected.id, 'back')}
+                  disabled={uploading}
+                >
+                  {uploading === 'back'
+                    ? <ActivityIndicator color={COLORS.copper} />
+                    : <Text style={[S.actionBtnText, { fontSize: 12 }]}>📷 Back Photo</Text>
+                  }
+                </TouchableOpacity>
+              </View>
 
               {/* Tracking number */}
               <Text style={[S.sectionLabel, { marginTop: 24 }]}>TRACKING NUMBER</Text>

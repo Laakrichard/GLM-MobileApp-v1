@@ -91,12 +91,12 @@ export async function updateOrderStatus(orderId, status) {
   return res.json();
 }
 
-export async function uploadFinishedMarker(orderId, imageBase64) {
+export async function uploadFinishedMarker(orderId, imageBase64, side = 'front') {
   const headers = await authHeaders();
   const res = await fetch(`${API_BASE}/wp-json/glm/v1/admin/orders/${orderId}/finished-marker`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ image: imageBase64 }),
+    body: JSON.stringify({ image: imageBase64, side }),
   });
   return res.json();
 }
