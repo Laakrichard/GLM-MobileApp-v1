@@ -61,7 +61,6 @@ function MainTabs({ isAdmin }) {
       <Tab.Screen name="Home"    component={HomeScreen} />
       <Tab.Screen name="Markers" component={MarkersScreen} />
       <Tab.Screen name="Design"  component={DesignerScreen} />
-      <Tab.Screen name="Orders"  component={OrdersScreen} />
       <Tab.Screen name="Videos"  component={VideosScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
       {isAdmin && <Tab.Screen name="Admin" component={AdminScreen} />}
@@ -97,6 +96,7 @@ export default function App() {
       <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Login">
         <Stack.Screen name="Login"       component={LoginScreen} />
         <Stack.Screen name="Register"    component={RegisterScreen} />
+        <Stack.Screen name="Orders"      component={OrdersScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Main"        children={({ navigation }) => {
           // Re-check role every time Main is navigated to
           const [adminState, setAdminState] = React.useState(isAdmin);

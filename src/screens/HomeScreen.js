@@ -62,7 +62,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={S.adminBannerIcon}>⚙️</Text>
           <View style={{ flex: 1 }}>
             <Text style={S.adminBannerTitle}>Admin Dashboard</Text>
-            <Text style={S.adminBannerSub}>Manage orders, upload markers, update tracking</Text>
+            <Text style={S.adminBannerSub}>Orders · Markers · Tracking</Text>
           </View>
           <Text style={S.adminBannerArrow}>→</Text>
         </TouchableOpacity>
@@ -94,7 +94,7 @@ export default function HomeScreen({ navigation }) {
       {/* Recent orders */}
       <View style={S.sectionHead}>
         <Text style={S.sectionTitle}>Recent Orders</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+        <TouchableOpacity onPress={() => navigation.navigate('Orders')}>
           <Text style={S.sectionLink}>View all</Text>
         </TouchableOpacity>
       </View>
