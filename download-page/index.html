@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLM Designer App — Golf Life Metals</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{--copper:#B87333;--copper-lt:#D4956A;--green:#1A3326;--black:#0D0D0D;--off-white:#F0EDE8;--muted:#888;--card:#161616;--border:rgba(255,255,255,0.08)}
+  html{scroll-behavior:smooth}
+  body{background:var(--black);color:var(--off-white);font-family:'Inter',sans-serif;line-height:1.6;overflow-x:hidden}
+  nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:18px 40px;background:rgba(13,13,13,0.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+  .nav-brand{display:flex;align-items:center;gap:12px}
+  .nav-logo{width:36px;height:36px;border-radius:8px;background:var(--green);border:1px solid var(--copper);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--copper);letter-spacing:1px}
+  .nav-name{font-size:13px;font-weight:600;letter-spacing:2px;text-transform:uppercase}
+  .nav-cta{background:var(--copper);color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:background 0.2s}
+  .nav-cta:hover{background:var(--copper-lt)}
+  .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 24px 80px;position:relative;overflow:hidden}
+  .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 40%,rgba(184,115,51,0.12) 0%,transparent 70%);pointer-events:none}
+  .eyebrow{font-size:11px;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--copper);margin-bottom:20px}
+  h1{font-family:'Playfair Display',serif;font-size:clamp(42px,7vw,80px);font-weight:400;line-height:1.1;margin-bottom:24px;background:linear-gradient(135deg,#F0EDE8 0%,#B87333 60%,#F0EDE8 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  h1 em{font-style:italic}
+  .hero-sub{font-size:17px;color:#aaa;max-width:480px;margin:0 auto 48px;line-height:1.8;font-weight:300}
+  .hero-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-bottom:64px}
+  .btn-p{display:inline-flex;align-items:center;gap:10px;background:var(--copper);color:#fff;padding:16px 32px;border-radius:12px;font-size:15px;font-weight:600;text-decoration:none;transition:all 0.2s}
+  .btn-p:hover{background:var(--copper-lt);transform:translateY(-2px)}
+  .btn-s{display:inline-flex;align-items:center;gap:10px;background:transparent;color:var(--off-white);padding:16px 32px;border-radius:12px;font-size:15px;font-weight:500;text-decoration:none;border:1px solid rgba(255,255,255,0.15);transition:all 0.2s}
+  .btn-s:hover{border-color:var(--copper);color:var(--copper)}
+  .phone-wrap{position:relative;display:inline-block;margin-bottom:80px}
+  .phone{width:260px;height:520px;background:var(--card);border-radius:40px;border:8px solid #2A2A2A;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.05);position:relative}
+  .phone-notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:100px;height:28px;background:#0D0D0D;border-radius:0 0 16px 16px;z-index:10}
+  .phone-screen{width:100%;height:100%;background:linear-gradient(180deg,var(--green) 0%,var(--black) 40%);display:flex;flex-direction:column;padding:48px 16px 16px}
+  .ps-t{font-size:9px;letter-spacing:2px;color:var(--copper);text-transform:uppercase;margin-bottom:4px}
+  .ps-h{font-family:'Playfair Display',serif;font-size:18px;color:#fff;line-height:1.2;margin-bottom:16px}
+  .ps-c{width:120px;height:120px;background:#F5F0EB;border-radius:50%;border:6px solid var(--copper);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--copper)}
+  .ps-price{font-size:22px;font-weight:700;color:var(--copper)}
+  .ps-price span{font-size:11px;color:#888;font-weight:400}
+  .ps-btn{margin-top:auto;background:var(--copper);color:#fff;border-radius:10px;padding:10px;text-align:center;font-size:12px;font-weight:600}
+  .phone-glow{position:absolute;inset:-40px;background:radial-gradient(ellipse,rgba(184,115,51,0.2) 0%,transparent 70%);pointer-events:none;z-index:-1}
+  .features-wrap{max-width:1100px;margin:0 auto;padding:80px 24px}
+  .sec-title{font-family:'Playfair Display',serif;font-size:clamp(28px,4vw,44px);text-align:center;font-weight:400;margin-bottom:56px;color:var(--off-white)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;transition:border-color 0.2s}
+  .card:hover{border-color:rgba(184,115,51,0.4)}
+  .card-icon{width:44px;height:44px;border-radius:10px;background:rgba(184,115,51,0.12);display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:16px}
+  .card h3{font-size:16px;font-weight:600;margin-bottom:8px}
+  .card p{font-size:14px;color:var(--muted);line-height:1.7}
+  .steps-wrap{padding:80px 24px;background:var(--green)}
+  .steps-inner{max-width:900px;margin:0 auto}
+  .steps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:40px;margin-top:56px}
+  .step{text-align:center}
+  .step-n{width:52px;height:52px;border-radius:50%;background:rgba(184,115,51,0.15);border:1px solid var(--copper);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:20px;color:var(--copper);margin:0 auto 16px}
+  .step h3{font-size:16px;font-weight:600;margin-bottom:8px}
+  .step p{font-size:13px;color:rgba(255,255,255,0.6);line-height:1.7}
+  .dl-wrap{padding:100px 24px;text-align:center}
+  .dl-box{max-width:520px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:24px;padding:48px 40px}
+  .dl-box h2{font-family:'Playfair Display',serif;font-size:32px;font-weight:400;margin-bottom:12px}
+  .dl-box p{color:var(--muted);font-size:15px;margin-bottom:36px;line-height:1.7}
+  .dl-btns{display:flex;flex-direction:column;gap:12px}
+  .dl-btn{display:flex;align-items:center;justify-content:center;gap:12px;padding:18px 24px;border-radius:12px;font-size:15px;font-weight:600;text-decoration:none;transition:all 0.2s}
+  .dl-ios{background:var(--copper);color:#fff}
+  .dl-ios:hover{background:var(--copper-lt);transform:translateY(-2px)}
+  .dl-android{background:transparent;color:var(--off-white);border:1px solid rgba(255,255,255,0.15)}
+  .dl-android:hover{border-color:var(--copper);color:var(--copper)}
+  .dl-note{font-size:11px;color:#555;margin-top:20px;line-height:1.8}
+  footer{padding:40px 24px;text-align:center;border-top:1px solid var(--border)}
+  footer p{font-size:12px;color:#444;line-height:1.8}
+  footer a{color:var(--copper);text-decoration:none}
+  @media(max-width:600px){nav{padding:16px 20px}.hero{padding:100px 20px 60px}.hero-btns{flex-direction:column;align-items:center}.btn-p,.btn-s{width:100%;justify-content:center}.dl-box{padding:36px 20px}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <div class="nav-logo">GLM</div>
+    <span class="nav-name">Golf Life Metals</span>
+  </div>
+  <a href="#download" class="nav-cta">Download App</a>
+</nav>
+
+<section class="hero">
+  <p class="eyebrow">GLM Designer App</p>
+  <h1>Design your marker.<br><em>Own the course.</em></h1>
+  <p class="hero-sub">Custom copper golf markers, designed by you and handcrafted by Jon. One of a kind. Every single time.</p>
+  <div class="hero-btns">
+    <a href="#download" class="btn-p"><span>⬇</span> Download for iOS</a>
+    <a href="https://glmgolf.com" class="btn-s" target="_blank"><span>🌐</span> Visit GLM Website</a>
+  </div>
+  <div class="phone-wrap">
+    <div class="phone-glow"></div>
+    <div class="phone">
+      <div class="phone-notch"></div>
+      <div class="phone-screen">
+        <p class="ps-t">GLM Designer</p>
+        <p class="ps-h">Design Your<br>Marker.</p>
+        <div class="ps-c">✦</div>
+        <p class="ps-price">$115 <span>Torched Copper</span></p>
+        <div class="ps-btn">Order This Design →</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="features-wrap">
+  <p class="eyebrow" style="text-align:center;margin-bottom:16px">Everything you need</p>
+  <h2 class="sec-title">Built for the way golfers actually shop.</h2>
+  <div class="grid">
+    <div class="card"><div class="card-icon">✦</div><h3>Native Designer</h3><p>Add stamps, text and shapes. Pick your finish. See your price update live as you design.</p></div>
+    <div class="card"><div class="card-icon">💳</div><h3>Secure Checkout</h3><p>Pay with Apple Pay or card via Stripe. Fast, secure, and coupon codes supported.</p></div>
+    <div class="card"><div class="card-icon">📦</div><h3>Order Tracking</h3><p>Track every order from your phone. Get notified the moment your marker ships.</p></div>
+    <div class="card"><div class="card-icon">📸</div><h3>Finished Marker Photos</h3><p>Jon photographs your completed marker and sends it to you before it ships.</p></div>
+    <div class="card"><div class="card-icon">🎨</div><h3>Browse All Markers</h3><p>Browse the full GLM gallery. Tap Remake to customise any marker and make it your own.</p></div>
+    <div class="card"><div class="card-icon">🎬</div><h3>Studio Videos</h3><p>Watch Jon craft your marker. Five behind-the-scenes videos from copper to finished piece.</p></div>
+  </div>
+</div>
+
+<div class="steps-wrap">
+  <div class="steps-inner">
+    <p class="eyebrow" style="text-align:center;margin-bottom:16px">How it works</p>
+    <h2 class="sec-title" style="color:#fff">From idea to your pocket in four steps.</h2>
+    <div class="steps-grid">
+      <div class="step"><div class="step-n">1</div><h3>Design</h3><p>Open the designer. Add stamps, text and shapes. Pick your finish.</p></div>
+      <div class="step"><div class="step-n">2</div><h3>Order</h3><p>Tap Order This Design. Pay with Apple Pay or card. Goes straight to Jon.</p></div>
+      <div class="step"><div class="step-n">3</div><h3>Crafted</h3><p>Jon handcrafts your marker. He photographs it and sends you the finished piece.</p></div>
+      <div class="step"><div class="step-n">4</div><h3>Delivered</h3><p>Your marker ships with tracking. One of a kind, made just for you.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="dl-wrap" id="download">
+  <div class="dl-box">
+    <h2>Get the app.</h2>
+    <p>Download the GLM Designer App and start creating your custom copper marker today. Free to download — you only pay when you order.</p>
+    <div class="dl-btns">
+      <a href="/glm-app/GLMDesigner.ipa" class="dl-btn dl-ios" download>
+        <span style="font-size:20px">🍎</span>
+        <div style="text-align:left"><div style="font-size:11px;font-weight:400;opacity:0.8">Download for</div><div>iPhone (iOS)</div></div>
+      </a>
+      <a href="/glm-app/GLMDesigner.apk" class="dl-btn dl-android" download>
+        <span style="font-size:20px">🤖</span>
+        <div style="text-align:left"><div style="font-size:11px;font-weight:400;opacity:0.6">Download for</div><div>Android</div></div>
+      </a>
+    </div>
+    <p class="dl-note">
+      iOS: Tap Download and open in Files app to install.<br>
+      Android: Tap Download — enable "Install unknown apps" if prompted.<br><br>
+      <strong style="color:#666">Version 1.0 · Golf Life Metals</strong>
+    </p>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 Golf Life Metals · <a href="https://glmgolf.com">glmgolf.com</a><br>Handcrafted Custom Copper Golf Markers · Made with ♥ by Jon Millman</p>
+</footer>
+
+</body>
+</html>
