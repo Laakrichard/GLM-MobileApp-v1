@@ -28,15 +28,7 @@
     },
     "plugins": [
       "expo-image-picker",
-      "expo-media-library",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon.jpg",
-          "color": "#B87333",
-          "sounds": []
-        }
-      ]
+      "expo-media-library"
     ]
   }
 }
