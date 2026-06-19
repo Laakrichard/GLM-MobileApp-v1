@@ -158,10 +158,30 @@ function glm_api_register( WP_REST_Request $request ) {
     if ( ! $name || ! $email || ! $password ) return new WP_Error( 'missing_fields', 'Name, email and password required', [ 'status' => 400 ] );
     if ( ! is_email( $email ) ) return new WP_Error( 'invalid_email', 'Invalid email', [ 'status' => 400 ] );
     if ( email_exists( $email ) ) return new WP_Error( 'email_exists', 'Email already exists', [ 'status' => 400 ] );
-    $username = sanitize_user( strtolower( str_replace( ' ', '.', $name ) ) . '.' . substr( md5( $email ), 0, 4 ) );
-    $user_id  = wp_create_user( $username, $password, $email );
-    if ( is_wp_error( $user_id ) ) return new WP_Error( 'register_failed', $user_id->get_error_message(), [ 'status' => 400 ] );
-    wp_update_user([ 'ID' => $user_id, 'display_name' => $name, 'first_name' => explode( ' ', $name )[0] ]);
+    // Generate clean username from email prefix
+    $email_prefix = strtolower(explode('@', $email)[0]);
+    $base_username = sanitize_user(preg_replace('/[^a-z0-9]/', '', $email_prefix));
+    if (empty($base_username)) $base_username = 'customer';
+    // Make username unique
+    $username = $base_username;
+    $counter  = 1;
+    while (username_exists($username)) { $username = $base_username . $counter; $counter++; }
+
+    $user_id = wp_create_user($username, $password, $email);
+    if (is_wp_error($user_id)) return new WP_Error('register_failed', $user_id->get_error_message(), ['status' => 400]);
+
+    // Split full name into first + last
+    $name_parts = explode(' ', trim($name), 2);
+    $first_name = $name_parts[0] ?? '';
+    $last_name  = $name_parts[1] ?? '';
+
+    wp_update_user([
+        'ID'           => $user_id,
+        'display_name' => $name,
+        'first_name'   => $first_name,
+        'last_name'    => $last_name,
+        'role'         => 'customer',
+    ]);
     // Force customer role — never allow admin rights via app registration
     $user_obj = get_user_by('id', $user_id);
     $user_obj->set_role('customer');
