@@ -17,12 +17,15 @@ export default function HomeScreen({ navigation }) {
   const [userName, setUserName] = useState('');
   const [orders,   setOrders]   = useState([]);
   const [loading,  setLoading]  = useState(true);
+  const [isAdmin,  setIsAdmin]  = useState(false);
 
   useEffect(() => {
     (async () => {
       const name  = await AsyncStorage.getItem('glm_username');
       const token = await AsyncStorage.getItem('glm_token');
+      const role  = await AsyncStorage.getItem('glm_role');
       setUserName(name || 'Golfer');
+      setIsAdmin(['administrator','editor','shop_manager'].includes(role));
       try {
         const res  = await fetch(`${API_BASE}/wp-json/glm/v1/my-orders`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -50,6 +53,21 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* Hero */}
+      {isAdmin && (
+        <TouchableOpacity
+          style={S.adminBanner}
+          onPress={() => navigation.navigate('Admin')}
+          activeOpacity={0.85}
+        >
+          <Text style={S.adminBannerIcon}>⚙️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={S.adminBannerTitle}>Admin Dashboard</Text>
+            <Text style={S.adminBannerSub}>Manage orders, upload markers, update tracking</Text>
+          </View>
+          <Text style={S.adminBannerArrow}>→</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity style={S.hero} onPress={() => navigation.navigate('Design')} activeOpacity={0.92}>
         <View style={S.heroBadge}><Text style={S.heroBadgeText}>CUSTOM COPPER</Text></View>
         <Text style={S.heroHeadline}>Design Your{'\n'}Marker.</Text>

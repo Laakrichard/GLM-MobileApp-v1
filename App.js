@@ -97,7 +97,18 @@ export default function App() {
       <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Login">
         <Stack.Screen name="Login"       component={LoginScreen} />
         <Stack.Screen name="Register"    component={RegisterScreen} />
-        <Stack.Screen name="Main"        children={() => <MainTabs isAdmin={isAdmin} />} />
+        <Stack.Screen name="Main"        children={({ navigation }) => {
+          // Re-check role every time Main is navigated to
+          const [adminState, setAdminState] = React.useState(isAdmin);
+          React.useEffect(() => {
+            const unsubscribe = navigation.addListener('focus', async () => {
+              const role = await AsyncStorage.getItem('glm_role');
+              setAdminState(ADMIN_ROLES.includes(role));
+            });
+            return unsubscribe;
+          }, [navigation]);
+          return <MainTabs isAdmin={adminState} />;
+        }} />
         <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
       </Stack.Navigator>
     </NavigationContainer>
