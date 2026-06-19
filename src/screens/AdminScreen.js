@@ -51,10 +51,21 @@ export default function AdminScreen() {
 
   async function handleStatusChange(orderId, status) {
     try {
+      const headers = await getAuthHeaders();
       await updateOrderStatus(orderId, status);
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
       if (selected?.id === orderId) setSelected(prev => ({ ...prev, status }));
-      Alert.alert('✓ Updated', `Order status changed to ${status}`);
+      // Send completion email when status set to completed
+      if (status === 'completed') {
+        await fetch(`${API_BASE}/wp-json/glm/v1/admin/orders/${orderId}/notify-customer`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ status_update: 'completed' }),
+        });
+        Alert.alert('✓ Completed', 'Order marked complete — customer notified.');
+      } else {
+        Alert.alert('✓ Updated', `Order status changed to ${status}`);
+      }
     } catch (e) {
       Alert.alert('Error', 'Could not update status.');
     }
@@ -76,8 +87,7 @@ export default function AdminScreen() {
     try {
       const base64 = result.assets[0].base64;
       await uploadFinishedMarker(orderId, base64, side);
-      Alert.alert('✓ Sent!', `Finished marker ${side} photo sent to customer via email.`);
-      // Update selected order locally
+      // Silent save — no popup. Admin uses Update Order to notify customer.
       const url = result.assets[0].uri;
       setSelected(prev => ({ ...prev, [`finished_${side}`]: url }));
       loadOrders();
@@ -120,22 +130,24 @@ export default function AdminScreen() {
     setSending(true);
     try {
       const headers = await getAuthHeaders();
-      // Save tracking if provided
+      // If tracking entered, save it and auto-change status to Shipped
       if (tracking) {
         await updateTrackingNumber(orderId, tracking, carrier);
+        await updateOrderStatus(orderId, 'shipped');
+        setSelected(prev => ({ ...prev, status: 'shipped' }));
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'shipped' } : o));
       }
-      // Send the update email with photos + tracking
+      // Send the notification email
       const res = await fetch(`${API_BASE}/wp-json/glm/v1/admin/orders/${orderId}/notify-customer`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          tracking_number: tracking,
-          carrier: carrier,
-        }),
+        body: JSON.stringify({ tracking_number: tracking, carrier }),
       });
       const data = await res.json();
       if (data.success) {
-        Alert.alert('✓ Order Updated', 'Customer has been notified with their marker photos and order details.');
+        Alert.alert('✓ Order Updated', tracking
+          ? 'Customer notified — order marked as Shipped.'
+          : 'Customer notified with their finished marker photos.');
         loadOrders();
       } else {
         Alert.alert('Error', data.message || 'Could not notify customer.');

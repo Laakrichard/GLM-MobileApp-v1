@@ -688,80 +688,95 @@ function glm_admin_notify_customer(WP_REST_Request $req) {
     $carrier        = $order->get_meta('_glm_carrier');
 
     // Has marker photos
-    $has_photos = $front_url || $back_url;
+    $has_photos    = $front_url || $back_url;
+    $status_update = sanitize_text_field($req->get_param('status_update'));
+    $is_shipped    = !empty($tracking);
+    $is_completed  = $status_update === 'completed';
 
-    // Build HTML email
-    $subject = $has_photos ? "Your GLM Marker is Ready! 🎉 — Order #{$order_id}" : "Order #{$order_id} Update — Golf Life Metals";
+    // Subject line
+    if ($is_completed) {
+        $subject = "Your GLM Order is Complete! — Order #{$order_id}";
+    } elseif ($is_shipped) {
+        $subject = "Your GLM Marker Has Shipped! 📦 — Order #{$order_id}";
+    } else {
+        $subject = "Your GLM Marker is Ready! 🎉 — Order #{$order_id}";
+    }
 
-    $front_img = $front_url ? "<img src='{$front_url}' style='width:280px;height:280px;object-fit:contain;border-radius:12px;margin:8px;' alt='Front of your marker' />" : '';
-    $back_img  = $back_url  ? "<img src='{$back_url}'  style='width:280px;height:280px;object-fit:contain;border-radius:12px;margin:8px;' alt='Back of your marker' />"  : '';
+    // Headline
+    if ($is_completed) {
+        $headline = "Your order is complete.";
+        $intro1   = "Everything is done and dusted — your custom copper marker has been completed and delivered. We hope you absolutely love it on the course.";
+        $intro2   = "It has been a genuine pleasure crafting something so personal for you. Thank you for being part of the Golf Life Metals family.";
+    } elseif ($is_shipped) {
+        $headline = "Your marker is on its way!";
+        $intro1   = "Great news — your custom copper marker has been carefully packaged and shipped. It is now making its way to you and should arrive soon.";
+        $intro2   = "Keep an eye on your tracking below. As always, if you have any questions, just reply to this email and I will get back to you personally.";
+    } else {
+        $headline = "Your marker is ready.";
+        $intro1   = "I am so excited to share this with you — your custom copper marker has been completed, and I have to say, it turned out absolutely beautiful.";
+        $intro2   = "Every marker I make is truly one of a kind, and yours is no exception. I hope it brings you as much joy on the course as it brought me crafting it for you.";
+    }
 
+    // Photos section
+    $front_img      = $front_url ? "<img src='{$front_url}' style='width:260px;height:260px;object-fit:contain;border-radius:12px;margin:8px;border:1px solid #eee;' alt='Front of your marker' />" : '';
+    $back_img       = $back_url  ? "<img src='{$back_url}'  style='width:260px;height:260px;object-fit:contain;border-radius:12px;margin:8px;border:1px solid #eee;' alt='Back of your marker' />"  : '';
     $photos_section = $has_photos ? "
-        <div style='text-align:center;margin:24px 0;'>
-            <p style='font-size:14px;color:#888;margin-bottom:12px;'>HERE IS YOUR FINISHED MARKER</p>
-            <div style='display:inline-block;'>
-                {$front_img}{$back_img}
-            </div>
+        <div style='text-align:center;margin:28px 0;background:#f9f7f4;border-radius:12px;padding:20px;'>
+            <p style='font-size:11px;color:#B87333;letter-spacing:2px;font-weight:700;margin:0 0 16px;'>YOUR FINISHED MARKER</p>
+            <div>{$front_img}{$back_img}</div>
         </div>
     " : '';
 
+    // Tracking section
     $tracking_section = $tracking ? "
         <div style='background:#f5f0eb;border-radius:10px;padding:16px;margin:20px 0;'>
-            <p style='margin:0 0 6px;font-size:12px;color:#888;font-weight:700;letter-spacing:1px;'>TRACKING INFORMATION</p>
-            <p style='margin:0;font-size:15px;color:#111;font-weight:700;'>{$carrier}: {$tracking}</p>
+            <p style='margin:0 0 6px;font-size:11px;color:#B87333;font-weight:700;letter-spacing:1px;'>TRACKING INFORMATION</p>
+            <p style='margin:0;font-size:15px;color:#111;font-weight:700;'>{$carrier} &nbsp;·&nbsp; {$tracking}</p>
         </div>
-    " : "
-        <p style='color:#888;font-size:14px;'>We will send you your tracking number as soon as your order ships.</p>
-    ";
+    " : ($is_completed ? '' : "
+        <p style='color:#888;font-size:14px;line-height:1.7;'>We will send you your tracking number as soon as your order ships — usually within 1-2 business days.</p>
+    ");
 
     $message = "
     <!DOCTYPE html>
     <html>
     <body style='margin:0;padding:0;background:#f0ede8;font-family:Georgia,serif;'>
-        <div style='max-width:600px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;'>
+        <div style='max-width:600px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);'>
 
             <!-- Header -->
-            <div style='background:#111;padding:32px;text-align:center;'>
-                <p style='color:#B87333;font-size:11px;letter-spacing:3px;margin:0 0 8px;'>GOLF LIFE METALS</p>
-                <h1 style='color:#fff;font-size:28px;margin:0;font-weight:400;'>Your marker is ready.</h1>
+            <div style='background:#111;padding:36px 32px;text-align:center;'>
+                <p style='color:#B87333;font-size:10px;letter-spacing:4px;margin:0 0 10px;font-family:Arial,sans-serif;'>GOLF LIFE METALS</p>
+                <h1 style='color:#fff;font-size:26px;margin:0;font-weight:400;font-style:italic;'>{$headline}</h1>
             </div>
 
             <!-- Body -->
-            <div style='padding:32px;'>
-                <p style='font-size:16px;color:#333;line-height:1.7;'>Hi {$customer_name},</p>
-
-                <p style='font-size:15px;color:#333;line-height:1.8;'>
-                    I'm so excited to share this with you — your custom copper marker has been completed, 
-                    and I have to say, it turned out absolutely beautiful.
-                </p>
-
-                <p style='font-size:15px;color:#333;line-height:1.8;'>
-                    Every marker I make is truly one of a kind, and yours is no exception. 
-                    I hope it brings you as much joy on the course as it brought me crafting it for you.
-                </p>
+            <div style='padding:36px 32px;'>
+                <p style='font-size:16px;color:#333;line-height:1.7;margin-bottom:16px;'>Hi {$customer_name},</p>
+                <p style='font-size:15px;color:#444;line-height:1.9;margin-bottom:16px;'>{$intro1}</p>
+                <p style='font-size:15px;color:#444;line-height:1.9;margin-bottom:24px;'>{$intro2}</p>
 
                 {$photos_section}
 
-                <div style='border-top:1px solid #eee;padding-top:20px;margin-top:20px;'>
-                    <p style='font-size:13px;color:#888;letter-spacing:1px;font-weight:700;margin-bottom:8px;'>ORDER #{$order_id} — {$finish}</p>
+                <div style='border-top:1px solid #eee;padding-top:20px;margin-top:8px;'>
+                    <p style='font-size:11px;color:#B87333;letter-spacing:1px;font-weight:700;margin-bottom:8px;font-family:Arial,sans-serif;'>ORDER #{$order_id} &nbsp;·&nbsp; {$finish}</p>
                     {$tracking_section}
                 </div>
 
-                <p style='font-size:15px;color:#333;line-height:1.8;margin-top:24px;'>
-                    Thank you so much for trusting me with your design. 
+                <p style='font-size:15px;color:#444;line-height:1.9;margin-top:28px;'>
+                    Thank you so much for trusting me with your design.<br>
                     It means the world to me and to Golf Life Metals.
                 </p>
 
-                <p style='font-size:15px;color:#333;'>
+                <p style='font-size:15px;color:#333;margin-top:24px;'>
                     With gratitude,<br>
-                    <strong>Jon</strong><br>
-                    <span style='color:#888;font-size:13px;'>Golf Life Metals</span>
+                    <strong style='font-size:17px;'>Jon</strong><br>
+                    <span style='color:#B87333;font-size:13px;font-family:Arial,sans-serif;'>Golf Life Metals</span>
                 </p>
             </div>
 
             <!-- Footer -->
             <div style='background:#111;padding:20px;text-align:center;'>
-                <p style='color:#555;font-size:11px;margin:0;'>glmgolf.com &nbsp;·&nbsp; Custom Copper Golf Markers</p>
+                <p style='color:#555;font-size:11px;margin:0;font-family:Arial,sans-serif;'>glmgolf.com &nbsp;·&nbsp; Custom Copper Golf Markers &nbsp;·&nbsp; Handcrafted One of a Kind</p>
             </div>
         </div>
     </body>
