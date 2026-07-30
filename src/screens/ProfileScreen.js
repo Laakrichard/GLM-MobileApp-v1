@@ -1,30 +1,73 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, ScrollView, Alert, Linking
+  Image, ScrollView, Alert, Linking, ActivityIndicator
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GLM_COLORS } from '../constants';
+import { GLM_COLORS, API_BASE } from '../constants';
 
 export default function ProfileScreen({ navigation }) {
   const [userName, setUserName] = useState('');
   const [email,    setEmail]    = useState('');
+  const [loggedIn, setLoggedIn] = useState(null); // null = checking
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    (async () => {
+    const unsubscribe = navigation.addListener('focus', loadProfile);
+    loadProfile();
+    return unsubscribe;
+  }, [navigation]);
+
+  async function loadProfile() {
+    const token = await AsyncStorage.getItem('glm_token');
+    setLoggedIn(!!token);
+    if (token) {
       setUserName(await AsyncStorage.getItem('glm_username') || 'Golfer');
       setEmail(await AsyncStorage.getItem('glm_email') || '');
-    })();
-  }, []);
+    }
+  }
 
   function handleLogout() {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: async () => {
         await AsyncStorage.multiRemove(['glm_token', 'glm_username', 'glm_email', 'glm_onboarded', 'glm_role', 'glm_push_token']);
-        navigation.replace('Login');
+        setLoggedIn(false);
       }},
     ]);
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your GLM account and profile data. This cannot be undone. Your past orders remain with Golf Life Metals for order fulfillment records, as required by law.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete Account', style: 'destructive', onPress: confirmDeleteAccount },
+      ]
+    );
+  }
+
+  async function confirmDeleteAccount() {
+    setDeleting(true);
+    try {
+      const token = await AsyncStorage.getItem('glm_token');
+      const res = await fetch(`${API_BASE}/wp-json/glm/v1/delete-account`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await AsyncStorage.multiRemove(['glm_token', 'glm_username', 'glm_email', 'glm_onboarded', 'glm_role', 'glm_push_token']);
+        setLoggedIn(false);
+        Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
+      } else {
+        Alert.alert('Could not delete account', data.message || 'Please try again or contact orders@golflifemetals.com.');
+      }
+    } catch (e) {
+      Alert.alert('Connection error', 'Could not delete account. Please try again.');
+    }
+    setDeleting(false);
   }
 
   const initials = userName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -46,6 +89,39 @@ export default function ProfileScreen({ navigation }) {
       ]
     }
   ];
+
+  if (loggedIn === null) {
+    return (
+      <View style={[S.container, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator color={GLM_COLORS.copper} size="large" />
+      </View>
+    );
+  }
+
+  if (loggedIn === false) {
+    return (
+      <ScrollView style={S.container} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+        <View style={S.signedOutWrap}>
+          <Image source={require('../../assets/logo.jpg')} style={S.signedOutLogo} resizeMode="contain" />
+          <Text style={S.name}>Welcome to GLM</Text>
+          <Text style={[S.email, { textAlign: 'center', marginTop: 4, marginBottom: 28 }]}>
+            Sign in or create an account to view your orders and profile.
+          </Text>
+          <TouchableOpacity style={S.signInBtn} onPress={() => navigation.navigate('Login')}>
+            <Text style={S.signInBtnText}>Sign In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{ marginTop: 16 }} onPress={() => navigation.navigate('Register')}>
+            <Text style={{ color: '#B87333', fontWeight: '700', fontSize: 14 }}>Create an account</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={S.footer}>
+          <Image source={require('../../assets/logo.jpg')} style={S.footerLogo} resizeMode="contain" />
+          <Text style={S.footerText}>Golf Life Metals</Text>
+          <Text style={S.footerTagline}>Premium Copper Markers</Text>
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={S.container} showsVerticalScrollIndicator={false}>
@@ -92,6 +168,13 @@ export default function ProfileScreen({ navigation }) {
         <Text style={S.logoutText}>Sign Out</Text>
       </TouchableOpacity>
 
+      {/* Delete account — required by App Store Guideline 5.1.1(v) */}
+      <TouchableOpacity style={S.deleteBtn} onPress={handleDeleteAccount} disabled={deleting}>
+        {deleting
+          ? <ActivityIndicator color="#E05252" />
+          : <Text style={S.deleteText}>Delete Account</Text>}
+      </TouchableOpacity>
+
       {/* Footer */}
       <View style={S.footer}>
         <Image source={require('../../assets/logo.jpg')} style={S.footerLogo} resizeMode="contain" />
@@ -122,6 +205,12 @@ const S = StyleSheet.create({
   menuArrow:      { color: '#333', fontSize: 22, fontWeight: '300' },
   logoutBtn:      { marginHorizontal: 20, marginTop: 24, backgroundColor: '#161616', borderRadius: 14, borderWidth: 1, borderColor: '#E05252' + '33', paddingVertical: 16, alignItems: 'center' },
   logoutText:     { color: '#E05252', fontWeight: '700', fontSize: 15, letterSpacing: 0.3 },
+  deleteBtn:      { marginHorizontal: 20, marginTop: 12, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  deleteText:     { color: '#7A2020', fontWeight: '600', fontSize: 13, letterSpacing: 0.3 },
+  signedOutWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, paddingTop: 40 },
+  signedOutLogo:  { width: 72, height: 72, borderRadius: 18, marginBottom: 20 },
+  signInBtn:      { width: '100%', backgroundColor: '#B87333', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  signInBtnText:  { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
   footer:         { alignItems: 'center', paddingVertical: 40 },
   footerLogo:     { width: 36, height: 36, borderRadius: 8, marginBottom: 10, opacity: 0.4 },
   footerText:     { color: '#333', fontSize: 12, fontWeight: '600', letterSpacing: 1 },

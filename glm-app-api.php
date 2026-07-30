@@ -40,6 +40,15 @@ add_action( 'rest_api_init', function () {
         'permission_callback' => '__return_true',
     ]);
 
+    // DELETE /wp-json/glm/v1/delete-account — permanently deletes the requesting
+    // user's WP account, per App Store Guideline 5.1.1(v). Requires a valid
+    // Bearer JWT (checked inside the callback via glm_api_get_user_from_request()).
+    register_rest_route( 'glm/v1', '/delete-account', [
+        'methods'             => 'DELETE',
+        'callback'            => 'glm_api_delete_account',
+        'permission_callback' => '__return_true',
+    ]);
+
 });
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -499,6 +508,42 @@ function glm_api_get_user_from_request( WP_REST_Request $request ) {
         $payload = json_decode( base64_decode( str_pad( strtr( $parts[1], '-_', '+/' ), strlen( $parts[1] ) % 4, '=', STR_PAD_RIGHT ) ), true );
         return isset( $payload['data']['user']['id'] ) ? (int) $payload['data']['user']['id'] : 0;
     } catch ( Exception $e ) { return 0; }
+}
+
+// DELETE /wp-json/glm/v1/delete-account — App Store Guideline 5.1.1(v) requires
+// real account deletion, not a deactivate/disable flag. WooCommerce order
+// records are kept (financial/legal record-keeping), but the WP user account
+// itself — the credentials, profile, and any personal data on the account —
+// is permanently removed.
+function glm_api_delete_account( WP_REST_Request $request ) {
+    $user_id = glm_api_get_user_from_request( $request );
+    if ( ! $user_id ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'Not authenticated.' ], 401 );
+    }
+
+    $user = get_userdata( $user_id );
+    if ( ! $user ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'Account not found.' ], 404 );
+    }
+
+    // Never allow this endpoint to delete an admin/shop_manager account —
+    // customer self-service deletion only.
+    if ( array_intersect( [ 'administrator', 'editor', 'shop_manager' ], (array) $user->roles ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'This account type cannot be self-deleted. Contact orders@golflifemetals.com.' ], 403 );
+    }
+
+    if ( ! function_exists( 'wp_delete_user' ) ) {
+        require_once ABSPATH . 'wp-admin/includes/user.php';
+    }
+
+    // Reassign no content (customer accounts don't own posts); pass null.
+    $deleted = wp_delete_user( $user_id, null );
+
+    if ( ! $deleted ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'Could not delete account. Please try again or contact support.' ], 500 );
+    }
+
+    return new WP_REST_Response( [ 'success' => true ], 200 );
 }
 
 // ── STAMPS endpoints (added for GLM MobileApp v1) ────────────────────────────

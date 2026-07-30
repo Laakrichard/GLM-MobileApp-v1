@@ -15,13 +15,20 @@ const STATUS = {
 };
 
 export default function OrdersScreen({ navigation }) {
-  const [orders,   setOrders]   = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [selected, setSelected] = useState(null);
+  const [orders,     setOrders]     = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [selected,   setSelected]   = useState(null);
+  const [loggedIn,   setLoggedIn]   = useState(null); // null = checking, true/false = known
 
   useEffect(() => {
     (async () => {
       const token = await AsyncStorage.getItem('glm_token');
+      if (!token) {
+        setLoggedIn(false);
+        setLoading(false);
+        return;
+      }
+      setLoggedIn(true);
       try {
         const res  = await fetch(`${API_BASE}/wp-json/glm/v1/my-orders`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -75,7 +82,22 @@ export default function OrdersScreen({ navigation }) {
         <Text style={S.sub}>{orders.length} total</Text>
       </View>
 
-      {loading ? (
+      {loggedIn === false ? (
+        <View style={S.empty}>
+          <Text style={S.emptySymbol}>◈</Text>
+          <Text style={S.emptyTitle}>Sign in to view orders</Text>
+          <Text style={S.emptySub}>Your order history is tied to your account — sign in or create one to see it.</Text>
+          <TouchableOpacity
+            style={{ backgroundColor: '#B87333', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32, marginTop: 20 }}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Sign In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{ marginTop: 14 }} onPress={() => navigation.navigate('Register')}>
+            <Text style={{ color: '#B87333', fontWeight: '700', fontSize: 14 }}>Create an account</Text>
+          </TouchableOpacity>
+        </View>
+      ) : loading ? (
         <ActivityIndicator color={GLM_COLORS.copper} style={{ marginTop: 60 }} size="large" />
       ) : orders.length === 0 ? (
         <View style={S.empty}>

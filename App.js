@@ -94,13 +94,16 @@ export default function App() {
   }
 
   if (appState === 'onboarding') {
-    return <OnboardingScreen onDone={() => setAppState('auth')} />;
+    return <OnboardingScreen onDone={() => setAppState('main')} />;
   }
 
+  // Note: browsing (Home, Markers, Design, Videos) never requires login — per
+  // App Store Guideline 5.1.1(v), only account-based features (Orders, Profile)
+  // are allowed to prompt for sign-in, and only when the user opens them.
   return (
     <NavigationContainer>
       <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Login">
+      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Main">
         <Stack.Screen name="Login"       component={LoginScreen} />
         <Stack.Screen name="Register"    component={RegisterScreen} />
         <Stack.Screen name="Orders"      component={OrdersScreen} options={{ headerShown: false }} />
