@@ -15,7 +15,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.golflifemetals.glmdesigner",
       "infoPlist": {
-        "NSUserNotificationUsageDescription": "GLM will notify you when your order status changes."
+        "NSUserNotificationUsageDescription": "GLM will notify you when your order status changes.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "deploymentTarget": "15.1"
     },
@@ -24,7 +25,12 @@
         "foregroundImage": "./assets/icon.jpg",
         "backgroundColor": "#111111"
       },
-      "package": "com.golflifemetals.glmdesigner"
+      "package": "com.golflifemetals.glmdesigner",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "plugins": [
       "expo-image-picker",
@@ -37,6 +43,11 @@
           "sounds": []
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ad6735e5-3216-42e3-8562-d9093f2cb134"
+      }
+    }
   }
 }
