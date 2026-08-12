@@ -121,6 +121,17 @@ const INJECT_JS = `
     // Step 2: force price recalculation
     try { if (typeof updPrice === 'function') updPrice(); } catch(pe) {}
 
+    // Guard against the async render step (enlivenObjects) hanging forever for
+    // certain object types (seen with grouped/curved text and custom Path shapes) —
+    // checkout must never depend on that step completing.
+    var _modalShown = false;
+    function _showModalOnce() {
+      if (_modalShown) return;
+      _modalShown = true;
+      window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+    }
+    setTimeout(_showModalOnce, 3000); // hard ceiling — checkout proceeds no matter what
+
     setTimeout(function() {
       try {
         // Call updPrice() to force recalculation, then wait a tick for DOM to update
@@ -249,20 +260,20 @@ const INJECT_JS = `
                     type: 'design_image_b', imageData: imgB,
                   }));
                 }
-                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+                _showModalOnce();
               });
             } else {
               // Single sided — clear any stale Side B image
               window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'clear_image_b' }));
-              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+              _showModalOnce();
             }
           });
         } else {
-          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+          _showModalOnce();
         }
 
       } catch(err) {
-        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'show_color_modal' }));
+        _showModalOnce();
       }
     }, 200);
 
@@ -793,6 +804,7 @@ function DesignerInner({ route, navigation }) {
           javaScriptEnabled domStorageEnabled allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false} mixedContentMode="always"
           sharedCookiesEnabled thirdPartyCookiesEnabled
+          webviewDebuggingEnabled
           userAgent="GLMDesignerApp/1.0 (ReactNative)"
         />
       </View>
